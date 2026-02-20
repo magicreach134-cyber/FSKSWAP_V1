@@ -1,6 +1,6 @@
 import { publicClient } from "@/lib/publicClient";
 import { parseUnits, formatUnits } from "viem";
-import { FSKRouterV3_ABI } from "@/config/abi/FSKRouterV3";
+import { FSKRouterV3_ABI } from "@/abi/FSKRouterV3";
 
 export async function getQuote({
   routerAddress,
