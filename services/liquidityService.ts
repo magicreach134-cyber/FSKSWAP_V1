@@ -1,21 +1,21 @@
-import { walletClient } from "@/lib";
+import { publicClient, walletClient } from "@/lib";
+import { routerAbi } from "@/abi";
 import { CONTRACTS } from "@/config";
-import { parseAbi } from "viem";
+import { Address } from "viem";
 
-const routerAbi = parseAbi([
-  "function addLiquidity(address,address,uint,uint,uint,uint,address,uint)",
-  "function removeLiquidity(address,address,uint,uint,uint,address,uint)"
-]);
+/* =========================================
+   ADD LIQUIDITY (TOKEN ↔ TOKEN)
+========================================= */
 
 export async function addLiquidity(
-  tokenA: `0x${string}`,
-  tokenB: `0x${string}`,
-  amountA: bigint,
-  amountB: bigint,
+  tokenA: Address,
+  tokenB: Address,
+  amountADesired: bigint,
+  amountBDesired: bigint,
   amountAMin: bigint,
   amountBMin: bigint,
-  to: `0x${string}`,
-  deadline: number
+  to: Address,
+  deadline: bigint
 ) {
   const [account] = await walletClient.getAddresses();
 
@@ -26,12 +26,184 @@ export async function addLiquidity(
     args: [
       tokenA,
       tokenB,
-      amountA,
-      amountB,
+      amountADesired,
+      amountBDesired,
       amountAMin,
       amountBMin,
       to,
-      deadline
+      deadline,
+    ],
+    account,
+  });
+}
+
+/* =========================================
+   ADD LIQUIDITY (TOKEN ↔ BNB)
+========================================= */
+
+export async function addLiquidityETH(
+  token: Address,
+  amountTokenDesired: bigint,
+  amountTokenMin: bigint,
+  amountETHMin: bigint,
+  to: Address,
+  deadline: bigint,
+  value: bigint
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName: "addLiquidityETH",
+    args: [
+      token,
+      amountTokenDesired,
+      amountTokenMin,
+      amountETHMin,
+      to,
+      deadline,
+    ],
+    account,
+    value,
+  });
+}
+
+/* =========================================
+   REMOVE LIQUIDITY (TOKEN ↔ TOKEN)
+========================================= */
+
+export async function removeLiquidity(
+  tokenA: Address,
+  tokenB: Address,
+  liquidity: bigint,
+  amountAMin: bigint,
+  amountBMin: bigint,
+  to: Address,
+  deadline: bigint
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName: "removeLiquidity",
+    args: [
+      tokenA,
+      tokenB,
+      liquidity,
+      amountAMin,
+      amountBMin,
+      to,
+      deadline,
+    ],
+    account,
+  });
+}
+
+/* =========================================
+   REMOVE LIQUIDITY (TOKEN ↔ BNB)
+========================================= */
+
+export async function removeLiquidityETH(
+  token: Address,
+  liquidity: bigint,
+  amountTokenMin: bigint,
+  amountETHMin: bigint,
+  to: Address,
+  deadline: bigint
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName: "removeLiquidityETH",
+    args: [
+      token,
+      liquidity,
+      amountTokenMin,
+      amountETHMin,
+      to,
+      deadline,
+    ],
+    account,
+  });
+}
+
+/* =========================================
+   REMOVE LIQUIDITY WITH PERMIT (TOKEN ↔ TOKEN)
+========================================= */
+
+export async function removeLiquidityWithPermit(
+  tokenA: Address,
+  tokenB: Address,
+  liquidity: bigint,
+  amountAMin: bigint,
+  amountBMin: bigint,
+  to: Address,
+  deadline: bigint,
+  approveMax: boolean,
+  v: number,
+  r: `0x${string}`,
+  s: `0x${string}`
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName: "removeLiquidityWithPermit",
+    args: [
+      tokenA,
+      tokenB,
+      liquidity,
+      amountAMin,
+      amountBMin,
+      to,
+      deadline,
+      approveMax,
+      v,
+      r,
+      s,
+    ],
+    account,
+  });
+}
+
+/* =========================================
+   REMOVE LIQUIDITY ETH WITH PERMIT
+========================================= */
+
+export async function removeLiquidityETHWithPermit(
+  token: Address,
+  liquidity: bigint,
+  amountTokenMin: bigint,
+  amountETHMin: bigint,
+  to: Address,
+  deadline: bigint,
+  approveMax: boolean,
+  v: number,
+  r: `0x${string}`,
+  s: `0x${string}`
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName: "removeLiquidityETHWithPermit",
+    args: [
+      token,
+      liquidity,
+      amountTokenMin,
+      amountETHMin,
+      to,
+      deadline,
+      approveMax,
+      v,
+      r,
+      s,
     ],
     account,
   });
