@@ -16,6 +16,7 @@ import { getDeadline } from "@/utils/deadline";
 
 import { parseUnits } from "viem";
 import { getWalletClient } from "@/lib/walletClient";
+import { publicClient } from "@/lib/publicClient";
 
 import FSKRouterV3_ABI from "@/abi/FSKRouterV3.json";
 import { ROUTER_ADDRESS } from "@/config/contracts";
@@ -80,7 +81,10 @@ export function useSwap() {
       if (!fromToken || !toToken)
         throw new Error("Token selection incomplete");
 
-      txStore.setStatus("pending");
+      txStore.open();
+      txStore.setTitle("Confirm Swap");
+      txStore.setDescription("Confirm this transaction in your wallet");
+      txStore.setStatus("prompting");
 
       const walletClient = getWalletClient();
 
@@ -104,9 +108,9 @@ export function useSwap() {
 
       const deadline = getDeadline(20);
 
-      // --------------------------------
+      // -----------------------------
       // NATIVE → TOKEN
-      // --------------------------------
+      // -----------------------------
       if (fromToken === NATIVE_TOKEN_ADDRESS) {
         const hash = await walletClient.writeContract({
           address: ROUTER_ADDRESS,
@@ -123,55 +127,17 @@ export function useSwap() {
         });
 
         txStore.setHash(hash);
+        txStore.setStatus("pending");
+
+        await publicClient.waitForTransactionReceipt({ hash });
+
         txStore.setStatus("success");
         return;
       }
 
-      // --------------------------------
-      // TOKEN → NATIVE
-      // --------------------------------
-      if (toToken === NATIVE_TOKEN_ADDRESS) {
-        const currentAllowance = await allowance(
-          fromToken,
-          address,
-          ROUTER_ADDRESS
-        );
-
-        if (currentAllowance < amountIn) {
-          const approveHash = await approve(
-            fromToken,
-            ROUTER_ADDRESS,
-            amountIn,
-            address
-          );
-
-          txStore.setHash(approveHash);
-          txStore.setStatus("pending");
-          return;
-        }
-
-        const hash = await walletClient.writeContract({
-          address: ROUTER_ADDRESS,
-          abi: FSKRouterV3_ABI,
-          functionName: "swapExactTokensForETH",
-          args: [
-            amountIn,
-            minOut,
-            [fromToken, WRAPPED_BNB_ADDRESS],
-            address,
-            deadline,
-          ],
-          account: address,
-        });
-
-        txStore.setHash(hash);
-        txStore.setStatus("success");
-        return;
-      }
-
-      // --------------------------------
-      // TOKEN → TOKEN
-      // --------------------------------
+      // -----------------------------
+      // TOKEN → TOKEN or TOKEN → BNB
+      // -----------------------------
       const currentAllowance = await allowance(
         fromToken,
         address,
@@ -179,6 +145,10 @@ export function useSwap() {
       );
 
       if (currentAllowance < amountIn) {
+        txStore.setTitle("Approve Token");
+        txStore.setDescription("Approve token spending");
+        txStore.setStatus("approving");
+
         const approveHash = await approve(
           fromToken,
           ROUTER_ADDRESS,
@@ -188,17 +158,30 @@ export function useSwap() {
 
         txStore.setHash(approveHash);
         txStore.setStatus("pending");
-        return;
+
+        await publicClient.waitForTransactionReceipt({
+          hash: approveHash,
+        });
       }
+
+      const swapFunction =
+        toToken === NATIVE_TOKEN_ADDRESS
+          ? "swapExactTokensForETH"
+          : "swapExactTokensForTokens";
+
+      const path =
+        toToken === NATIVE_TOKEN_ADDRESS
+          ? [fromToken, WRAPPED_BNB_ADDRESS]
+          : [fromToken, toToken];
 
       const hash = await walletClient.writeContract({
         address: ROUTER_ADDRESS,
         abi: FSKRouterV3_ABI,
-        functionName: "swapExactTokensForTokens",
+        functionName: swapFunction,
         args: [
           amountIn,
           minOut,
-          [fromToken, toToken],
+          path,
           address,
           deadline,
         ],
@@ -206,9 +189,13 @@ export function useSwap() {
       });
 
       txStore.setHash(hash);
+      txStore.setStatus("pending");
+
+      await publicClient.waitForTransactionReceipt({ hash });
+
       txStore.setStatus("success");
     } catch (err: any) {
-      txStore.setError(err.message || "Swap failed");
+      txStore.setError(err?.message || "Swap failed");
       txStore.setStatus("error");
     }
   };
