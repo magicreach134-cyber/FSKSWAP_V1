@@ -1,19 +1,23 @@
 import { create } from "zustand";
+import { Address } from "viem";
 
-interface LaunchpadStore {
+interface LaunchpadState {
+  presaleAddress?: Address;
   contributionAmount: string;
-  referral?: `0x${string}`;
+  referral?: Address;
 
+  setPresale: (address: Address) => void;
   setContributionAmount: (amount: string) => void;
-  setReferral: (address: `0x${string}`) => void;
+  setReferral: (address: Address) => void;
 }
 
-export const useLaunchpadStore = create<LaunchpadStore>((set) => ({
+export const useLaunchpadStore = create<LaunchpadState>((set) => ({
+  presaleAddress: undefined,
   contributionAmount: "",
   referral: undefined,
 
+  setPresale: (address) => set({ presaleAddress: address }),
   setContributionAmount: (amount) =>
     set({ contributionAmount: amount }),
-
   setReferral: (address) => set({ referral: address }),
 }));
