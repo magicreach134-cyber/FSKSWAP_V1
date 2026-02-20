@@ -1,0 +1,4 @@
+import { zeroAddress } from "viem";
+
+export const NATIVE_TOKEN_ADDRESS = zeroAddress; // 0x000...
+export const WRAPPED_BNB_ADDRESS = "0xYourWBNBAddressHere" as const;
