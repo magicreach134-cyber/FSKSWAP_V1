@@ -1,14 +1,16 @@
-import { walletClient } from "@/lib";
+import { publicClient, walletClient } from "@/lib";
+import { flashswapAbi } from "@/abi";
 import { CONTRACTS } from "@/config";
-import { parseAbi } from "viem";
+import { Address } from "viem";
 
-const flashswapAbi = parseAbi([
-  "function executeFlashSwap(address token,uint256 amount)"
-]);
+/* =========================================
+   EXECUTE FLASH SWAP
+========================================= */
 
 export async function executeFlashSwap(
-  token: `0x${string}`,
-  amount: bigint
+  token: Address,
+  amount: bigint,
+  data: `0x${string}`
 ) {
   const [account] = await walletClient.getAddresses();
 
@@ -16,7 +18,38 @@ export async function executeFlashSwap(
     address: CONTRACTS.flashswap,
     abi: flashswapAbi,
     functionName: "executeFlashSwap",
-    args: [token, amount],
+    args: [token, amount, data],
     account,
+  });
+}
+
+/* =========================================
+   READ — FLASH FEE
+========================================= */
+
+export async function flashFee(
+  token: Address,
+  amount: bigint
+): Promise<bigint> {
+  return publicClient.readContract({
+    address: CONTRACTS.flashswap,
+    abi: flashswapAbi,
+    functionName: "flashFee",
+    args: [token, amount],
+  });
+}
+
+/* =========================================
+   READ — SUPPORTED TOKEN
+========================================= */
+
+export async function isTokenSupported(
+  token: Address
+): Promise<boolean> {
+  return publicClient.readContract({
+    address: CONTRACTS.flashswap,
+    abi: flashswapAbi,
+    functionName: "isSupportedToken",
+    args: [token],
   });
 }
