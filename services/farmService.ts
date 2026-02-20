@@ -1,30 +1,99 @@
 import { publicClient, walletClient } from "@/lib";
+import { stakingAbi } from "@/abi";
 import { CONTRACTS } from "@/config";
-import { parseAbi } from "viem";
+import { Address } from "viem";
 
-const farmAbi = parseAbi([
-  "function deposit(uint256 pid, uint256 amount)",
-  "function withdraw(uint256 pid, uint256 amount)",
-  "function pendingReward(uint256 pid, address user) view returns (uint256)"
-]);
+/* =========================================
+   WRITE FUNCTIONS
+========================================= */
 
-export async function deposit(pid: number, amount: bigint) {
+export async function deposit(
+  pid: number,
+  amount: bigint
+) {
   const [account] = await walletClient.getAddresses();
 
   return walletClient.writeContract({
     address: CONTRACTS.staking,
-    abi: farmAbi,
+    abi: stakingAbi,
     functionName: "deposit",
-    args: [pid, amount],
+    args: [BigInt(pid), amount],
     account,
   });
 }
 
-export async function pendingReward(pid: number, user: `0x${string}`) {
+export async function withdraw(
+  pid: number,
+  amount: bigint
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.staking,
+    abi: stakingAbi,
+    functionName: "withdraw",
+    args: [BigInt(pid), amount],
+    account,
+  });
+}
+
+export async function emergencyWithdraw(
+  pid: number
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.staking,
+    abi: stakingAbi,
+    functionName: "emergencyWithdraw",
+    args: [BigInt(pid)],
+    account,
+  });
+}
+
+/* =========================================
+   READ FUNCTIONS
+========================================= */
+
+export async function pendingReward(
+  pid: number,
+  user: Address
+): Promise<bigint> {
   return publicClient.readContract({
     address: CONTRACTS.staking,
-    abi: farmAbi,
+    abi: stakingAbi,
     functionName: "pendingReward",
-    args: [pid, user],
+    args: [BigInt(pid), user],
+  });
+}
+
+export async function poolInfo(
+  pid: number
+) {
+  return publicClient.readContract({
+    address: CONTRACTS.staking,
+    abi: stakingAbi,
+    functionName: "poolInfo",
+    args: [BigInt(pid)],
+  });
+}
+
+export async function userInfo(
+  pid: number,
+  user: Address
+) {
+  return publicClient.readContract({
+    address: CONTRACTS.staking,
+    abi: stakingAbi,
+    functionName: "userInfo",
+    args: [BigInt(pid), user],
+  });
+}
+
+export async function totalAllocPoint(): Promise<bigint> {
+  return publicClient.readContract({
+    address: CONTRACTS.staking,
+    abi: stakingAbi,
+    functionName: "totalAllocPoint",
   });
 }
