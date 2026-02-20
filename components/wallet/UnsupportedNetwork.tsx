@@ -2,9 +2,11 @@
 
 import { Button } from "@/components/ui";
 import { useWalletStore } from "@/store/walletStore";
+import { useWallet } from "@/hooks/useWallet";
 
 export default function UnsupportedNetwork() {
   const { requiredChainId } = useWalletStore();
+  const { switchNetwork } = useWallet();
 
   return (
     <div className="space-y-4 text-center">
@@ -16,7 +18,7 @@ export default function UnsupportedNetwork() {
         Please switch to BNB Testnet (Chain ID: {requiredChainId})
       </p>
 
-      <Button fullWidth>
+      <Button fullWidth onClick={switchNetwork}>
         Switch Network
       </Button>
     </div>
