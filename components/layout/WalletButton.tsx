@@ -1,22 +1,32 @@
 "use client";
 
-import { useWalletStore } from "@/store";
 import { Button } from "@/components/ui";
+import { useWalletStore } from "@/store/walletStore";
+import { shortenAddress } from "@/lib/shortenAddress";
+import clsx from "clsx";
 
 export function WalletButton() {
-  const { address, connected } = useWalletStore();
+  const {
+    address,
+    chainId,
+    open,
+    requiredChainId,
+  } = useWalletStore();
 
-  if (!connected) {
-    return (
-      <Button variant="primary">
-        Connect Wallet
-      </Button>
-    );
-  }
+  const isWrongNetwork =
+    address && chainId !== requiredChainId;
 
   return (
-    <Button variant="secondary">
-      {address?.slice(0, 6)}...{address?.slice(-4)}
+    <Button
+      onClick={open}
+      className={clsx(
+        "min-w-[140px]",
+        isWrongNetwork && "bg-red-600 hover:bg-red-700"
+      )}
+    >
+      {!address && "Connect Wallet"}
+      {address && !isWrongNetwork && shortenAddress(address)}
+      {address && isWrongNetwork && "Wrong Network"}
     </Button>
   );
 }
