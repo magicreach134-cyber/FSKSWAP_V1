@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-interface FarmStore {
+interface FarmState {
   selectedPid?: number;
   stakeAmount: string;
 
@@ -8,7 +8,7 @@ interface FarmStore {
   setStakeAmount: (amount: string) => void;
 }
 
-export const useFarmStore = create<FarmStore>((set) => ({
+export const useFarmStore = create<FarmState>((set) => ({
   selectedPid: undefined,
   stakeAmount: "",
 
