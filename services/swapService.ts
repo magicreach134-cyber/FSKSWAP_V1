@@ -1,16 +1,16 @@
 import { publicClient, walletClient } from "@/lib";
+import { routerAbi } from "@/abi";
 import { CONTRACTS } from "@/config";
-import { parseAbi } from "viem";
+import { Address } from "viem";
 
-const routerAbi = parseAbi([
-  "function getAmountsOut(uint amountIn, address[] memory path) view returns (uint[] memory)",
-  "function swapExactTokensForTokens(uint amountIn,uint amountOutMin,address[] calldata path,address to,uint deadline)"
-]);
+/* =========================================
+   QUOTE FUNCTIONS
+========================================= */
 
 export async function getAmountsOut(
   amountIn: bigint,
-  path: `0x${string}`[]
-) {
+  path: Address[]
+): Promise<bigint[]> {
   return publicClient.readContract({
     address: CONTRACTS.router,
     abi: routerAbi,
@@ -19,12 +19,28 @@ export async function getAmountsOut(
   });
 }
 
+export async function getAmountsIn(
+  amountOut: bigint,
+  path: Address[]
+): Promise<bigint[]> {
+  return publicClient.readContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName: "getAmountsIn",
+    args: [amountOut, path],
+  });
+}
+
+/* =========================================
+   TOKEN ↔ TOKEN
+========================================= */
+
 export async function swapExactTokensForTokens(
   amountIn: bigint,
   amountOutMin: bigint,
-  path: `0x${string}`[],
-  user: `0x${string}`,
-  deadline: number
+  path: Address[],
+  to: Address,
+  deadline: bigint
 ) {
   const [account] = await walletClient.getAddresses();
 
@@ -32,7 +48,110 @@ export async function swapExactTokensForTokens(
     address: CONTRACTS.router,
     abi: routerAbi,
     functionName: "swapExactTokensForTokens",
-    args: [amountIn, amountOutMin, path, user, deadline],
+    args: [amountIn, amountOutMin, path, to, deadline],
     account,
+  });
+}
+
+export async function swapExactTokensForTokensSupportingFeeOnTransferTokens(
+  amountIn: bigint,
+  amountOutMin: bigint,
+  path: Address[],
+  to: Address,
+  deadline: bigint
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName:
+      "swapExactTokensForTokensSupportingFeeOnTransferTokens",
+    args: [amountIn, amountOutMin, path, to, deadline],
+    account,
+  });
+}
+
+/* =========================================
+   TOKEN ↔ BNB
+========================================= */
+
+export async function swapExactTokensForETH(
+  amountIn: bigint,
+  amountOutMin: bigint,
+  path: Address[],
+  to: Address,
+  deadline: bigint
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName: "swapExactTokensForETH",
+    args: [amountIn, amountOutMin, path, to, deadline],
+    account,
+  });
+}
+
+export async function swapExactTokensForETHSupportingFeeOnTransferTokens(
+  amountIn: bigint,
+  amountOutMin: bigint,
+  path: Address[],
+  to: Address,
+  deadline: bigint
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName:
+      "swapExactTokensForETHSupportingFeeOnTransferTokens",
+    args: [amountIn, amountOutMin, path, to, deadline],
+    account,
+  });
+}
+
+/* =========================================
+   BNB ↔ TOKEN
+========================================= */
+
+export async function swapExactETHForTokens(
+  amountOutMin: bigint,
+  path: Address[],
+  to: Address,
+  deadline: bigint,
+  value: bigint
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName: "swapExactETHForTokens",
+    args: [amountOutMin, path, to, deadline],
+    account,
+    value,
+  });
+}
+
+export async function swapExactETHForTokensSupportingFeeOnTransferTokens(
+  amountOutMin: bigint,
+  path: Address[],
+  to: Address,
+  deadline: bigint,
+  value: bigint
+) {
+  const [account] = await walletClient.getAddresses();
+
+  return walletClient.writeContract({
+    address: CONTRACTS.router,
+    abi: routerAbi,
+    functionName:
+      "swapExactETHForTokensSupportingFeeOnTransferTokens",
+    args: [amountOutMin, path, to, deadline],
+    account,
+    value,
   });
 }
