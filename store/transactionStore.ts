@@ -3,6 +3,7 @@ import { create } from "zustand";
 export type TxStatus =
   | "idle"
   | "prompting"
+  | "approving"
   | "pending"
   | "success"
   | "error";
