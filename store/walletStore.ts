@@ -1,27 +1,23 @@
 import { create } from "zustand";
-import { WalletState } from "@/types";
+import { Address } from "viem";
 
-interface WalletStore extends WalletState {
-  setWallet: (address: `0x${string}`, chainId: number) => void;
+interface WalletState {
+  address?: Address;
+  chainId?: number;
+  connected: boolean;
+
+  setWallet: (address: Address, chainId: number) => void;
   disconnect: () => void;
 }
 
-export const useWalletStore = create<WalletStore>((set) => ({
+export const useWalletStore = create<WalletState>((set) => ({
   address: undefined,
   chainId: undefined,
   connected: false,
 
   setWallet: (address, chainId) =>
-    set({
-      address,
-      chainId,
-      connected: true,
-    }),
+    set({ address, chainId, connected: true }),
 
   disconnect: () =>
-    set({
-      address: undefined,
-      chainId: undefined,
-      connected: false,
-    }),
+    set({ address: undefined, chainId: undefined, connected: false }),
 }));
