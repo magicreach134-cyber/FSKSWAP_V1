@@ -1,5 +1,5 @@
 import { publicClient } from "@/lib/publicClient";
-import FskFactoryV2_ABI from "@/abi/FskFactoryV2.json";
+import FSKFactoryV2_ABI from "@/abi/FSKFactoryV2.json";
 import FSKPair_ABI from "@/abi/FSKPair.json";
 import { FACTORY_ADDRESS } from "@/config/contracts";
 
@@ -12,7 +12,7 @@ export async function getPairAddress(
 ): Promise<`0x${string}` | null> {
   const pair = await publicClient.readContract({
     address: FACTORY_ADDRESS,
-    abi: FskFactoryV2_ABI,
+    abi: FSKFactoryV2_ABI,
     functionName: "getPair",
     args: [tokenA, tokenB],
   });
@@ -31,8 +31,5 @@ export async function getReserves(pairAddress: `0x${string}`) {
     functionName: "getReserves",
   });
 
-  return {
-    reserve0,
-    reserve1,
-  };
+  return { reserve0, reserve1 };
 }
