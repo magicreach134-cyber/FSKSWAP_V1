@@ -5,7 +5,11 @@ import { useWalletStore } from "@/store/walletStore";
 import { useTransactionStore } from "@/store/transactionStore";
 
 import { getQuote } from "@/services/swapService";
-import { allowance, approve, decimals as getDecimals } from "@/services/erc20Service";
+import {
+  allowance,
+  approve,
+  decimals as getDecimals,
+} from "@/services/erc20Service";
 
 import { calculateMinOut } from "@/utils/calculateMinOut";
 import { getDeadline } from "@/utils/deadline";
@@ -15,6 +19,10 @@ import { getWalletClient } from "@/lib/walletClient";
 
 import FSKRouterV3_ABI from "@/abi/FSKRouterV3.json";
 import { ROUTER_ADDRESS } from "@/config/contracts";
+import {
+  NATIVE_TOKEN_ADDRESS,
+  WRAPPED_BNB_ADDRESS,
+} from "@/config/native";
 
 export function useSwap() {
   const {
@@ -35,13 +43,27 @@ export function useSwap() {
   const fetchQuote = async () => {
     if (!fromToken || !toToken || !fromAmount) return;
 
-    const inputDecimals = await getDecimals(fromToken);
-    const outputDecimals = await getDecimals(toToken);
+    const inputDecimals =
+      fromToken === NATIVE_TOKEN_ADDRESS
+        ? 18
+        : await getDecimals(fromToken);
+
+    const outputDecimals =
+      toToken === NATIVE_TOKEN_ADDRESS
+        ? 18
+        : await getDecimals(toToken);
+
+    const path =
+      fromToken === NATIVE_TOKEN_ADDRESS
+        ? [WRAPPED_BNB_ADDRESS, toToken]
+        : toToken === NATIVE_TOKEN_ADDRESS
+        ? [fromToken, WRAPPED_BNB_ADDRESS]
+        : [fromToken, toToken];
 
     const amountOut = await getQuote({
       routerAddress: ROUTER_ADDRESS,
       amountIn: fromAmount,
-      path: [fromToken, toToken],
+      path,
       inputDecimals,
       outputDecimals,
     });
@@ -50,7 +72,7 @@ export function useSwap() {
   };
 
   // --------------------------------
-  // SWAP
+  // EXECUTE SWAP
   // --------------------------------
   const executeSwap = async () => {
     try {
@@ -62,12 +84,94 @@ export function useSwap() {
 
       const walletClient = getWalletClient();
 
-      const inputDecimals = await getDecimals(fromToken);
-      const outputDecimals = await getDecimals(toToken);
+      const inputDecimals =
+        fromToken === NATIVE_TOKEN_ADDRESS
+          ? 18
+          : await getDecimals(fromToken);
+
+      const outputDecimals =
+        toToken === NATIVE_TOKEN_ADDRESS
+          ? 18
+          : await getDecimals(toToken);
 
       const amountIn = parseUnits(fromAmount, inputDecimals);
 
-      // 1️⃣ Check allowance
+      const minOut = calculateMinOut({
+        quotedAmountOut: toAmount,
+        slippage,
+        decimals: outputDecimals,
+      });
+
+      const deadline = getDeadline(20);
+
+      // --------------------------------
+      // NATIVE → TOKEN
+      // --------------------------------
+      if (fromToken === NATIVE_TOKEN_ADDRESS) {
+        const hash = await walletClient.writeContract({
+          address: ROUTER_ADDRESS,
+          abi: FSKRouterV3_ABI,
+          functionName: "swapExactETHForTokens",
+          args: [
+            minOut,
+            [WRAPPED_BNB_ADDRESS, toToken],
+            address,
+            deadline,
+          ],
+          value: amountIn,
+          account: address,
+        });
+
+        txStore.setHash(hash);
+        txStore.setStatus("success");
+        return;
+      }
+
+      // --------------------------------
+      // TOKEN → NATIVE
+      // --------------------------------
+      if (toToken === NATIVE_TOKEN_ADDRESS) {
+        const currentAllowance = await allowance(
+          fromToken,
+          address,
+          ROUTER_ADDRESS
+        );
+
+        if (currentAllowance < amountIn) {
+          const approveHash = await approve(
+            fromToken,
+            ROUTER_ADDRESS,
+            amountIn,
+            address
+          );
+
+          txStore.setHash(approveHash);
+          txStore.setStatus("pending");
+          return;
+        }
+
+        const hash = await walletClient.writeContract({
+          address: ROUTER_ADDRESS,
+          abi: FSKRouterV3_ABI,
+          functionName: "swapExactTokensForETH",
+          args: [
+            amountIn,
+            minOut,
+            [fromToken, WRAPPED_BNB_ADDRESS],
+            address,
+            deadline,
+          ],
+          account: address,
+        });
+
+        txStore.setHash(hash);
+        txStore.setStatus("success");
+        return;
+      }
+
+      // --------------------------------
+      // TOKEN → TOKEN
+      // --------------------------------
       const currentAllowance = await allowance(
         fromToken,
         address,
@@ -87,15 +191,7 @@ export function useSwap() {
         return;
       }
 
-      // 2️⃣ Calculate minimumOut
-      const minOut = calculateMinOut({
-        quotedAmountOut: toAmount,
-        slippage,
-        decimals: outputDecimals,
-      });
-
-      // 3️⃣ Execute swap
-      const swapHash = await walletClient.writeContract({
+      const hash = await walletClient.writeContract({
         address: ROUTER_ADDRESS,
         abi: FSKRouterV3_ABI,
         functionName: "swapExactTokensForTokens",
@@ -104,12 +200,12 @@ export function useSwap() {
           minOut,
           [fromToken, toToken],
           address,
-          getDeadline(20),
+          deadline,
         ],
         account: address,
       });
 
-      txStore.setHash(swapHash);
+      txStore.setHash(hash);
       txStore.setStatus("success");
     } catch (err: any) {
       txStore.setError(err.message || "Swap failed");
