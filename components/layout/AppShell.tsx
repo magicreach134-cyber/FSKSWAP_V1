@@ -3,6 +3,7 @@
 import { Navbar } from "./Navbar";
 import { Sidebar } from "./Sidebar";
 import { Footer } from "./Footer";
+import TransactionModal from "@/components/transaction/TransactionModal";
 
 export function AppShell({
   children,
@@ -22,6 +23,9 @@ export function AppShell({
       </div>
 
       <Footer />
+
+      {/* Global Transaction Modal */}
+      <TransactionModal />
     </div>
   );
 }
