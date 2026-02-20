@@ -30,10 +30,8 @@ export function useWallet() {
       const [account] = await walletClient.requestAddresses();
       const chainId = await walletClient.getChainId();
 
-      if (chainId !== requiredChainId) {
-        throw new Error("Wrong network");
-      }
-
+      // Do NOT throw on wrong network
+      // Let UI handle mismatch state
       setWallet(account as Address, chainId);
     } catch (err) {
       console.error(err);
@@ -44,28 +42,43 @@ export function useWallet() {
   const switchNetwork = async () => {
     if (!window.ethereum) return;
 
-    await window.ethereum.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: `0x${requiredChainId.toString(16)}` }],
-    });
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: `0x${requiredChainId.toString(16)}` }],
+      });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   useEffect(() => {
     if (!window.ethereum) return;
 
-    const handleAccountsChanged = (accounts: string[]) => {
+    const handleAccountsChanged = async (accounts: string[]) => {
       if (!accounts.length) {
         disconnect();
-      } else {
-        setWallet(accounts[0] as Address, requiredChainId);
+        return;
       }
+
+      const walletClient = createWalletClient({
+        chain: bscTestnet,
+        transport: custom(window.ethereum),
+      });
+
+      const chainId = await walletClient.getChainId();
+
+      setWallet(accounts[0] as Address, chainId);
     };
 
-    const handleChainChanged = (chainIdHex: string) => {
+    const handleChainChanged = async (chainIdHex: string) => {
       const chainId = parseInt(chainIdHex, 16);
-      if (chainId !== requiredChainId) {
-        disconnect();
-      }
+
+      const { address } = useWalletStore.getState();
+
+      if (!address) return;
+
+      setWallet(address, chainId);
     };
 
     window.ethereum.on("accountsChanged", handleAccountsChanged);
