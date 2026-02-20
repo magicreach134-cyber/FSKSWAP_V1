@@ -1,25 +1,30 @@
 import { create } from "zustand";
+import { Address } from "viem";
 
-interface SwapStore {
-  tokenIn?: `0x${string}`;
-  tokenOut?: `0x${string}`;
+interface SwapState {
+  tokenIn?: Address;
+  tokenOut?: Address;
   amountIn: string;
-  slippage: number;
+  slippageBps: number;
+  feeOnTransfer: boolean;
 
-  setTokenIn: (address: `0x${string}`) => void;
-  setTokenOut: (address: `0x${string}`) => void;
+  setTokenIn: (address: Address) => void;
+  setTokenOut: (address: Address) => void;
   setAmountIn: (amount: string) => void;
-  setSlippage: (value: number) => void;
+  setSlippage: (bps: number) => void;
+  setFeeOnTransfer: (enabled: boolean) => void;
 }
 
-export const useSwapStore = create<SwapStore>((set) => ({
+export const useSwapStore = create<SwapState>((set) => ({
   tokenIn: undefined,
   tokenOut: undefined,
   amountIn: "",
-  slippage: 50, // 0.5% default (basis points)
+  slippageBps: 50,
+  feeOnTransfer: false,
 
   setTokenIn: (address) => set({ tokenIn: address }),
   setTokenOut: (address) => set({ tokenOut: address }),
   setAmountIn: (amount) => set({ amountIn: amount }),
-  setSlippage: (value) => set({ slippage: value }),
+  setSlippage: (bps) => set({ slippageBps: bps }),
+  setFeeOnTransfer: (enabled) => set({ feeOnTransfer: enabled }),
 }));
