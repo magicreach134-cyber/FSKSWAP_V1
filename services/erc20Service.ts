@@ -1,4 +1,5 @@
-import { publicClient, walletClient } from "@/lib";
+import { publicClient } from "@/lib/publicClient";
+import { getWalletClient } from "@/lib/walletClient";
 import { erc20Abi } from "@/abi";
 import { Address } from "viem";
 
@@ -30,9 +31,10 @@ export async function allowance(
 export async function approve(
   token: Address,
   spender: Address,
-  amount: bigint
+  amount: bigint,
+  account: Address
 ) {
-  const [account] = await walletClient.getAddresses();
+  const walletClient = getWalletClient();
 
   return walletClient.writeContract({
     address: token,
