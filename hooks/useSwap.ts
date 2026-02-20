@@ -14,7 +14,7 @@ import {
 import { calculateMinOut } from "@/utils/calculateMinOut";
 import { getDeadline } from "@/utils/deadline";
 
-import { parseUnits } from "viem";
+import { parseUnits, BaseError } from "viem";
 import { getWalletClient } from "@/lib/walletClient";
 import { publicClient } from "@/lib/publicClient";
 
@@ -88,15 +88,16 @@ export function useSwap() {
 
       const walletClient = getWalletClient();
 
-      const inputDecimals =
-        fromToken === NATIVE_TOKEN_ADDRESS
-          ? 18
-          : await getDecimals(fromToken);
+      const isNativeIn = fromToken === NATIVE_TOKEN_ADDRESS;
+      const isNativeOut = toToken === NATIVE_TOKEN_ADDRESS;
 
-      const outputDecimals =
-        toToken === NATIVE_TOKEN_ADDRESS
-          ? 18
-          : await getDecimals(toToken);
+      const inputDecimals = isNativeIn
+        ? 18
+        : await getDecimals(fromToken);
+
+      const outputDecimals = isNativeOut
+        ? 18
+        : await getDecimals(toToken);
 
       const amountIn = parseUnits(fromAmount, inputDecimals);
 
@@ -108,84 +109,90 @@ export function useSwap() {
 
       const deadline = getDeadline(20);
 
-      // -----------------------------
-      // NATIVE → TOKEN
-      // -----------------------------
-      if (fromToken === NATIVE_TOKEN_ADDRESS) {
-        const hash = await walletClient.writeContract({
-          address: ROUTER_ADDRESS,
-          abi: FSKRouterV3_ABI,
-          functionName: "swapExactETHForTokens",
-          args: [
-            minOut,
-            [WRAPPED_BNB_ADDRESS, toToken],
-            address,
-            deadline,
-          ],
-          value: amountIn,
-          account: address,
-        });
+      const path = isNativeIn
+        ? [WRAPPED_BNB_ADDRESS, toToken]
+        : isNativeOut
+        ? [fromToken, WRAPPED_BNB_ADDRESS]
+        : [fromToken, toToken];
 
-        txStore.setHash(hash);
-        txStore.setStatus("pending");
+      const functionName = isNativeIn
+        ? "swapExactETHForTokens"
+        : isNativeOut
+        ? "swapExactTokensForETH"
+        : "swapExactTokensForTokens";
 
-        await publicClient.waitForTransactionReceipt({ hash });
-
-        txStore.setStatus("success");
-        return;
-      }
-
-      // -----------------------------
-      // TOKEN → TOKEN or TOKEN → BNB
-      // -----------------------------
-      const currentAllowance = await allowance(
-        fromToken,
-        address,
-        ROUTER_ADDRESS
-      );
-
-      if (currentAllowance < amountIn) {
-        txStore.setTitle("Approve Token");
-        txStore.setDescription("Approve token spending");
-        txStore.setStatus("approving");
-
-        const approveHash = await approve(
+      // --------------------------------
+      // APPROVAL
+      // --------------------------------
+      if (!isNativeIn) {
+        const currentAllowance = await allowance(
           fromToken,
-          ROUTER_ADDRESS,
-          amountIn,
-          address
+          address,
+          ROUTER_ADDRESS
         );
 
-        txStore.setHash(approveHash);
-        txStore.setStatus("pending");
+        if (currentAllowance < amountIn) {
+          txStore.setTitle("Approve Token");
+          txStore.setDescription("Approve token spending");
+          txStore.setStatus("approving");
 
-        await publicClient.waitForTransactionReceipt({
-          hash: approveHash,
-        });
+          const approveHash = await approve(
+            fromToken,
+            ROUTER_ADDRESS,
+            amountIn,
+            address
+          );
+
+          txStore.setHash(approveHash);
+          txStore.setStatus("pending");
+
+          await publicClient.waitForTransactionReceipt({
+            hash: approveHash,
+          });
+        }
       }
 
-      const swapFunction =
-        toToken === NATIVE_TOKEN_ADDRESS
-          ? "swapExactTokensForETH"
-          : "swapExactTokensForTokens";
+      // --------------------------------
+      // SIMULATE (REVERT CHECK)
+      // --------------------------------
+      await publicClient.simulateContract({
+        address: ROUTER_ADDRESS,
+        abi: FSKRouterV3_ABI,
+        functionName,
+        args: isNativeIn
+          ? [minOut, path, address, deadline]
+          : [amountIn, minOut, path, address, deadline],
+        value: isNativeIn ? amountIn : undefined,
+        account: address,
+      });
 
-      const path =
-        toToken === NATIVE_TOKEN_ADDRESS
-          ? [fromToken, WRAPPED_BNB_ADDRESS]
-          : [fromToken, toToken];
+      // --------------------------------
+      // ESTIMATE GAS
+      // --------------------------------
+      const gas = await publicClient.estimateContractGas({
+        address: ROUTER_ADDRESS,
+        abi: FSKRouterV3_ABI,
+        functionName,
+        args: isNativeIn
+          ? [minOut, path, address, deadline]
+          : [amountIn, minOut, path, address, deadline],
+        value: isNativeIn ? amountIn : undefined,
+        account: address,
+      });
 
+      // --------------------------------
+      // SEND TX
+      // --------------------------------
       const hash = await walletClient.writeContract({
         address: ROUTER_ADDRESS,
         abi: FSKRouterV3_ABI,
-        functionName: swapFunction,
-        args: [
-          amountIn,
-          minOut,
-          path,
-          address,
-          deadline,
-        ],
+        functionName,
+        args: isNativeIn
+          ? [minOut, path, address, deadline]
+          : [amountIn, minOut, path, address, deadline],
+        value: isNativeIn ? amountIn : undefined,
         account: address,
+        gas,
       });
 
       txStore.setHash(hash);
@@ -194,8 +201,14 @@ export function useSwap() {
       await publicClient.waitForTransactionReceipt({ hash });
 
       txStore.setStatus("success");
-    } catch (err: any) {
-      txStore.setError(err?.message || "Swap failed");
+    } catch (err) {
+      let message = "Swap failed";
+
+      if (err instanceof BaseError) {
+        message = err.shortMessage || message;
+      }
+
+      txStore.setError(message);
       txStore.setStatus("error");
     }
   };
