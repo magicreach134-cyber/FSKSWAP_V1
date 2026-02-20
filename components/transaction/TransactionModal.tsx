@@ -24,7 +24,7 @@ export default function TransactionModal() {
     close();
   };
 
-  // Auto close after success (4s)
+  // Auto close after success (4 seconds)
   useEffect(() => {
     if (status === "success") {
       const timer = setTimeout(() => {
