@@ -1,35 +1,49 @@
-import { deposit, withdraw, emergencyWithdraw } from "@/services";
-import { useFarmStore, useWalletStore, useTransactionStore } from "@/store";
-import { allowance, approve } from "@/services";
-import { CONTRACTS } from "@/config";
-import { Address } from "viem";
+"use client";
 
-export function useFarm() {
-  const { selectedPid, stakeAmount } = useFarmStore();
+import { useWalletStore } from "@/store/walletStore";
+import { useTransactionStore } from "@/store/transactionStore";
+import {
+  deposit,
+  withdraw,
+  pendingReward,
+  userInfo,
+} from "@/services/farmService";
+import { publicClient } from "@/lib/publicClient";
+
+export function useFarm(pid: number) {
   const { address } = useWalletStore();
   const txStore = useTransactionStore();
 
-  async function stake(lpToken: Address) {
-    if (selectedPid === undefined || !stakeAmount || !address) return;
+  async function refresh() {
+    if (!address) return;
+
+    const [user, pending] = await Promise.all([
+      userInfo(pid, address),
+      pendingReward(pid, address),
+    ]);
+
+    return {
+      staked: user.amount,
+      rewardDebt: user.rewardDebt,
+      pending,
+    };
+  }
+
+  async function stake(amount: bigint) {
+    if (!address) return;
 
     try {
+      txStore.open();
+      txStore.setTitle("Stake LP");
+      txStore.setStatus("prompting");
+
+      const hash = await deposit(pid, amount);
+
+      txStore.setHash(hash);
       txStore.setStatus("pending");
 
-      const amountWei = BigInt(stakeAmount);
+      await publicClient.waitForTransactionReceipt({ hash });
 
-      const currentAllowance = await allowance(
-        lpToken,
-        address,
-        CONTRACTS.staking
-      );
-
-      if (currentAllowance < amountWei) {
-        txStore.setStatus("approving");
-        await approve(lpToken, CONTRACTS.staking, amountWei);
-      }
-
-      const txHash = await deposit(selectedPid, amountWei);
-      txStore.setHash(txHash);
       txStore.setStatus("success");
     } catch (err: any) {
       txStore.setError(err?.message);
@@ -37,13 +51,21 @@ export function useFarm() {
     }
   }
 
-  async function unstake() {
-    if (selectedPid === undefined || !stakeAmount) return;
+  async function unstake(amount: bigint) {
+    if (!address) return;
 
     try {
+      txStore.open();
+      txStore.setTitle("Unstake LP");
+      txStore.setStatus("prompting");
+
+      const hash = await withdraw(pid, amount);
+
+      txStore.setHash(hash);
       txStore.setStatus("pending");
-      const txHash = await withdraw(selectedPid, BigInt(stakeAmount));
-      txStore.setHash(txHash);
+
+      await publicClient.waitForTransactionReceipt({ hash });
+
       txStore.setStatus("success");
     } catch (err: any) {
       txStore.setError(err?.message);
@@ -51,19 +73,17 @@ export function useFarm() {
     }
   }
 
-  async function emergency() {
-    if (selectedPid === undefined) return;
+  async function harvest() {
+    if (!address) return;
 
-    try {
-      txStore.setStatus("pending");
-      const txHash = await emergencyWithdraw(selectedPid);
-      txStore.setHash(txHash);
-      txStore.setStatus("success");
-    } catch (err: any) {
-      txStore.setError(err?.message);
-      txStore.setStatus("error");
-    }
+    // In MasterChef contracts, harvest = deposit(pid, 0)
+    await stake(0n);
   }
 
-  return { stake, unstake, emergency };
+  return {
+    refresh,
+    stake,
+    unstake,
+    harvest,
+  };
 }
