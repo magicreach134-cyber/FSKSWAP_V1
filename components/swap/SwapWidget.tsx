@@ -1,109 +1,93 @@
 "use client";
 
-import { useState } from "react";
-import { Card, Button, IconButton } from "@/components/ui";
-import { ArrowDownUp, Settings } from "lucide-react";
+import { useEffect } from "react";
+import { Button, Card, Spinner } from "@/components/ui";
+import { useSwap } from "@/hooks/useSwap";
+import { useSwapStore } from "@/store/swapStore";
+import { useWalletStore } from "@/store/walletStore";
 
 import TokenSelector from "./TokenSelector";
-import TokenListModal from "./TokenListModal";
-import SwapSettings from "./SwapSettings";
 import PriceImpact from "./PriceImpact";
 import RoutePreview from "./RoutePreview";
 import MinimumReceived from "./MinimumReceived";
 import LiquidityProviderFee from "./LiquidityProviderFee";
 
-export interface Token {
-  address: string;
-  symbol: string;
-  decimals: number;
-  logo: string;
-}
-
 export default function SwapWidget() {
-  const [fromToken, setFromToken] = useState<Token | null>(null);
-  const [toToken, setToToken] = useState<Token | null>(null);
-  const [fromAmount, setFromAmount] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [tokenModalFor, setTokenModalFor] =
-    useState<"from" | "to" | null>(null);
+  const { fetchQuote, executeSwap } = useSwap();
 
-  const switchTokens = () => {
-    setFromToken(toToken);
-    setToToken(fromToken);
-  };
+  const {
+    fromToken,
+    toToken,
+    fromAmount,
+    toAmount,
+    setFromAmount,
+    priceImpact,
+    hasLiquidity,
+    isQuoting,
+  } = useSwapStore();
+
+  const { connected } = useWalletStore();
+
+  useEffect(() => {
+    if (fromAmount && fromToken && toToken) {
+      fetchQuote();
+    }
+  }, [fromAmount, fromToken, toToken]);
+
+  const disabled =
+    !connected ||
+    !fromAmount ||
+    !fromToken ||
+    !toToken ||
+    !hasLiquidity ||
+    isQuoting;
 
   return (
-    <>
-      <Card className="w-full max-w-md rounded-3xl shadow-2xl bg-[#111827] border border-gray-800 text-white p-6 space-y-4">
+    <Card className="p-6 space-y-6 w-full max-w-md mx-auto">
+      <div className="space-y-4">
+        <TokenSelector type="from" />
 
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-semibold">Swap</h2>
-          <IconButton onClick={() => setSettingsOpen(true)}>
-            <Settings size={18} />
-          </IconButton>
+        <div className="text-center text-muted-foreground text-sm">
+          ↓
         </div>
 
-        {/* From */}
-        <TokenSelector
-          label="From"
-          token={fromToken}
-          amount={fromAmount}
-          onAmountChange={setFromAmount}
-          onSelectToken={() => setTokenModalFor("from")}
-        />
+        <TokenSelector type="to" readOnly />
+      </div>
 
-        {/* Switch */}
-        <div className="flex justify-center -my-2">
-          <IconButton
-            className="bg-gray-800 hover:bg-gray-700 border border-gray-700"
-            onClick={switchTokens}
-          >
-            <ArrowDownUp size={16} />
-          </IconButton>
+      {isQuoting && (
+        <div className="flex justify-center">
+          <Spinner />
         </div>
+      )}
 
-        {/* To */}
-        <TokenSelector
-          label="To"
-          token={toToken}
-          amount=""
-          onAmountChange={() => {}}
-          onSelectToken={() => setTokenModalFor("to")}
-          readOnly
-        />
-
-        {/* Details */}
-        <div className="pt-3 space-y-2 text-sm text-gray-400">
-          <PriceImpact />
+      {hasLiquidity && toAmount && (
+        <div className="space-y-2 text-sm">
           <MinimumReceived />
           <LiquidityProviderFee />
+          <PriceImpact value={priceImpact} />
           <RoutePreview />
         </div>
+      )}
 
-        {/* Action */}
-        <Button
-          fullWidth
-          className="mt-4 bg-gradient-to-r from-blue-600 to-purple-600"
-        >
-          Swap
-        </Button>
-      </Card>
+      {!hasLiquidity && (
+        <div className="text-red-500 text-sm text-center">
+          Insufficient liquidity
+        </div>
+      )}
 
-      <SwapSettings
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
-
-      <TokenListModal
-        open={!!tokenModalFor}
-        onClose={() => setTokenModalFor(null)}
-        onSelect={(token) => {
-          if (tokenModalFor === "from") setFromToken(token);
-          if (tokenModalFor === "to") setToToken(token);
-          setTokenModalFor(null);
-        }}
-      />
-    </>
+      <Button
+        fullWidth
+        disabled={disabled}
+        onClick={executeSwap}
+      >
+        {!connected
+          ? "Connect Wallet"
+          : !hasLiquidity
+          ? "No Liquidity"
+          : isQuoting
+          ? "Fetching..."
+          : "Swap"}
+      </Button>
+    </Card>
   );
 }
