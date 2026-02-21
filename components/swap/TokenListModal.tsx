@@ -1,28 +1,16 @@
 "use client";
 
-import { Modal, Input } from "@/components/ui";
 import { useState } from "react";
-import type { Token } from "./SwapWidget";
+import { Modal, Input } from "@/components/ui";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSelect: (token: Token) => void;
+  onSelect: (token: `0x${string}`) => void;
 }
 
-const TOKENS: Token[] = [
-  {
-    address: "0x...",
-    symbol: "FSK",
-    decimals: 18,
-    logo: "/tokens/fsk.png",
-  },
-  {
-    address: "0x...",
-    symbol: "WBNB",
-    decimals: 18,
-    logo: "/tokens/wbnb.png",
-  },
+const TOKENS: `0x${string}`[] = [
+  // Add your configured token addresses here
 ];
 
 export default function TokenListModal({
@@ -33,29 +21,30 @@ export default function TokenListModal({
   const [search, setSearch] = useState("");
 
   const filtered = TOKENS.filter((t) =>
-    t.symbol.toLowerCase().includes(search.toLowerCase())
+    t.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
     <Modal open={open} onClose={onClose}>
-      <div className="p-6 w-full max-w-md space-y-4">
-        <h3 className="text-lg font-semibold">Select Token</h3>
-
+      <div className="p-6 space-y-4 w-full max-w-md">
         <Input
-          placeholder="Search token"
+          placeholder="Search by address"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
 
-        <div className="space-y-2">
+        <div className="max-h-60 overflow-y-auto space-y-2">
           {filtered.map((token) => (
-            <button
-              key={token.address}
-              onClick={() => onSelect(token)}
-              className="w-full text-left p-3 rounded-xl hover:bg-gray-800"
+            <div
+              key={token}
+              className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
+              onClick={() => {
+                onSelect(token);
+                onClose();
+              }}
             >
-              {token.symbol}
-            </button>
+              {token}
+            </div>
           ))}
         </div>
       </div>
