@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { Card, Button, Spinner } from "@/components/ui";
-import { formatUnits } from "viem";
+import { formatUnits, parseUnits } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import { allowance, approve } from "@/services/erc20Service";
 import { useWalletStore } from "@/store/walletStore";
 import { useTransactionStore } from "@/store/transactionStore";
 import { useFarm } from "@/hooks/useFarm";
+import { userInfo, pendingReward } from "@/services/farmService";
 import { CONTRACTS } from "@/config";
 import FSKPair_ABI from "@/abi/FSKPair.json";
 
@@ -31,35 +32,31 @@ export default function FarmCard({
   const { stake, unstake, harvest } = useFarm(pid);
 
   const [lpBalance, setLpBalance] = useState<bigint>(0n);
-  const [totalStaked, setTotalStaked] = useState<bigint>(0n);
+  const [staked, setStaked] = useState<bigint>(0n);
+  const [pending, setPending] = useState<bigint>(0n);
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // --------------------------------
-  // Fetch LP Balance + Total Staked
-  // --------------------------------
   useEffect(() => {
     async function load() {
       if (!address) return;
 
       setLoading(true);
 
-      const [userBal, total] = await Promise.all([
+      const [bal, user, reward] = await Promise.all([
         publicClient.readContract({
           address: lpToken,
           abi: FSKPair_ABI,
           functionName: "balanceOf",
           args: [address],
         }),
-        publicClient.readContract({
-          address: lpToken,
-          abi: FSKPair_ABI,
-          functionName: "balanceOf",
-          args: [CONTRACTS.staking],
-        }),
+        userInfo(pid, address),
+        pendingReward(pid, address),
       ]);
 
-      setLpBalance(userBal);
-      setTotalStaked(total);
+      setLpBalance(bal);
+      setStaked(user.amount);
+      setPending(reward);
 
       setLoading(false);
     }
@@ -67,93 +64,100 @@ export default function FarmCard({
     load();
   }, [address]);
 
-  // --------------------------------
-  // Stake Handler
-  // --------------------------------
   async function handleStake() {
-    if (!address) return;
+    if (!input || !address) return;
 
-    try {
-      txStore.open();
-      txStore.setTitle("Stake LP");
-      txStore.setStatus("prompting");
+    const amount = parseUnits(input, lpDecimals);
 
-      const currentAllowance = await allowance(
+    txStore.open();
+    txStore.setTitle("Stake LP");
+    txStore.setStatus("prompting");
+
+    const currentAllowance = await allowance(
+      lpToken,
+      address,
+      CONTRACTS.staking
+    );
+
+    if (currentAllowance < amount) {
+      txStore.setStatus("approving");
+
+      const approveHash = await approve(
         lpToken,
-        address,
-        CONTRACTS.staking
+        CONTRACTS.staking,
+        amount,
+        address
       );
 
-      if (currentAllowance < lpBalance) {
-        txStore.setStatus("approving");
-
-        const approveHash = await approve(
-          lpToken,
-          CONTRACTS.staking,
-          lpBalance,
-          address
-        );
-
-        await publicClient.waitForTransactionReceipt({
-          hash: approveHash,
-        });
-      }
-
-      await stake();
-    } catch (err: any) {
-      txStore.setError(err?.message);
-      txStore.setStatus("error");
+      await publicClient.waitForTransactionReceipt({
+        hash: approveHash,
+      });
     }
+
+    await stake(amount);
+    setInput("");
+  }
+
+  async function handleUnstake() {
+    if (!input) return;
+    const amount = parseUnits(input, lpDecimals);
+    await unstake(amount);
+    setInput("");
   }
 
   const disabled =
-    !connected ||
-    loading ||
-    lpBalance === 0n;
+    !connected || loading;
 
   return (
     <Card className="p-6 space-y-5 w-full max-w-md mx-auto">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <h3 className="font-semibold text-lg">
-          {lpSymbol}
-        </h3>
+      <div className="flex justify-between">
+        <h3 className="font-semibold">{lpSymbol}</h3>
         <span className="text-xs text-muted-foreground">
           PID #{pid}
         </span>
       </div>
 
-      {loading && (
-        <div className="flex justify-center">
-          <Spinner />
-        </div>
-      )}
+      {loading && <Spinner />}
 
-      {/* Stats */}
       <div className="text-sm space-y-1">
         <div>
-          Your LP Balance: {formatUnits(lpBalance, lpDecimals)}
+          LP Balance: {formatUnits(lpBalance, lpDecimals)}
         </div>
         <div>
-          Total Staked: {formatUnits(totalStaked, lpDecimals)}
+          Staked: {formatUnits(staked, lpDecimals)}
+        </div>
+        <div>
+          Pending {rewardSymbol}: {formatUnits(pending, 18)}
         </div>
       </div>
 
-      {/* Actions */}
       <div className="flex gap-2">
-        <Button
-          fullWidth
-          disabled={disabled}
-          onClick={handleStake}
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="0.0"
+          className="flex-1 px-3 py-2 border rounded-lg"
+        />
+        <button
+          onClick={() =>
+            setInput(formatUnits(lpBalance, lpDecimals))
+          }
+          className="px-3 py-2 text-sm bg-gray-200 rounded-lg"
         >
-          Stake All
+          MAX
+        </button>
+      </div>
+
+      <div className="flex gap-2">
+        <Button fullWidth disabled={disabled} onClick={handleStake}>
+          Stake
         </Button>
 
         <Button
           fullWidth
           variant="secondary"
-          disabled={!connected}
-          onClick={unstake}
+          disabled={disabled}
+          onClick={handleUnstake}
         >
           Unstake
         </Button>
@@ -162,10 +166,10 @@ export default function FarmCard({
       <Button
         fullWidth
         variant="outline"
-        disabled={!connected}
+        disabled={!pending || pending === 0n}
         onClick={harvest}
       >
-        Claim {rewardSymbol}
+        Harvest
       </Button>
     </Card>
   );
