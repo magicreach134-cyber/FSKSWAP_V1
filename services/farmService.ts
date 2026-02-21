@@ -58,7 +58,7 @@ export async function emergencyWithdraw(
 export async function pendingReward(
   pid: number,
   user: Address
-): Promise<bigint> {
+) {
   return publicClient.readContract({
     address: CONTRACTS.staking,
     abi: stakingAbi,
@@ -67,9 +67,7 @@ export async function pendingReward(
   });
 }
 
-export async function poolInfo(
-  pid: number
-) {
+export async function poolInfo(pid: number) {
   return publicClient.readContract({
     address: CONTRACTS.staking,
     abi: stakingAbi,
@@ -90,7 +88,7 @@ export async function userInfo(
   });
 }
 
-export async function totalAllocPoint(): Promise<bigint> {
+export async function totalAllocPoint() {
   return publicClient.readContract({
     address: CONTRACTS.staking,
     abi: stakingAbi,
