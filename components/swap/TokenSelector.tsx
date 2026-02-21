@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Button, Input } from "@/components/ui";
+import { useEffect, useState } from "react";
+import { formatUnits } from "viem";
 import { useSwapStore } from "@/store/swapStore";
 import { useWalletStore } from "@/store/walletStore";
-import { balanceOf } from "@/services/erc20Service";
-import { formatUnits, parseUnits } from "viem";
+import { balanceOf, decimals as getDecimals } from "@/services/erc20Service";
 import { publicClient } from "@/lib/publicClient";
-import TokenListModal from "./TokenListModal";
 import { NATIVE_TOKEN_ADDRESS } from "@/config/native";
 
 interface Props {
@@ -15,25 +13,23 @@ interface Props {
   readOnly?: boolean;
 }
 
-const GAS_BUFFER = parseUnits("0.003", 18); // ~0.003 BNB buffer
-
 export default function TokenSelector({ type, readOnly }: Props) {
   const {
     fromToken,
     toToken,
     fromAmount,
+    toAmount,
     setFromAmount,
-    setFromToken,
-    setToToken,
+    setToAmount,
   } = useSwapStore();
 
   const { address } = useWalletStore();
 
   const token = type === "from" ? fromToken : toToken;
-  const amount = type === "from" ? fromAmount : "";
+  const amount = type === "from" ? fromAmount : toAmount;
 
-  const [open, setOpen] = useState(false);
   const [balance, setBalance] = useState<bigint>(0n);
+  const [tokenDecimals, setTokenDecimals] = useState(18);
 
   // --------------------------------
   // Fetch balance
@@ -43,96 +39,72 @@ export default function TokenSelector({ type, readOnly }: Props) {
       if (!address || !token) return;
 
       if (token === NATIVE_TOKEN_ADDRESS) {
-        const nativeBalance = await publicClient.getBalance({
-          address,
-        });
+        const nativeBalance = await publicClient.getBalance({ address });
         setBalance(nativeBalance);
-        return;
+        setTokenDecimals(18);
+      } else {
+        const [bal, dec] = await Promise.all([
+          balanceOf(token, address),
+          getDecimals(token),
+        ]);
+        setBalance(bal);
+        setTokenDecimals(dec);
       }
-
-      const bal = await balanceOf(token, address);
-      setBalance(bal);
     };
 
     fetchBalance();
   }, [address, token]);
 
+  const formattedBalance = formatUnits(balance, tokenDecimals);
+
   // --------------------------------
-  // Smart MAX
+  // Max handler
   // --------------------------------
   const handleMax = () => {
-    if (!token) return;
+    if (!formattedBalance) return;
 
-    if (token === NATIVE_TOKEN_ADDRESS) {
-      // Subtract gas buffer
-      const adjusted =
-        balance > GAS_BUFFER ? balance - GAS_BUFFER : 0n;
-
-      setFromAmount(formatUnits(adjusted, 18));
-    } else {
-      setFromAmount(formatUnits(balance, 18));
-    }
-  };
-
-  // --------------------------------
-  // Auto switch
-  // --------------------------------
-  const handleSelect = (selected: `0x${string}`) => {
     if (type === "from") {
-      if (selected === toToken) {
-        setToToken(fromToken!);
-      }
-      setFromToken(selected);
+      setFromAmount(formattedBalance);
     } else {
-      if (selected === fromToken) {
-        setFromToken(toToken!);
-      }
-      setToToken(selected);
+      setToAmount(formattedBalance);
     }
   };
 
   return (
-    <div className="space-y-2">
+    <div className="p-4 rounded-xl bg-gray-100 dark:bg-gray-900 space-y-3">
       <div className="flex justify-between text-xs text-muted-foreground">
         <span>{type === "from" ? "From" : "To"}</span>
-        {type === "from" && (
+        {token && (
           <span>
-            Balance: {Number(formatUnits(balance, 18)).toFixed(4)}
+            Balance: {formattedBalance}
           </span>
         )}
       </div>
 
-      <div className="flex gap-2">
-        <Input
+      <div className="flex justify-between items-center gap-2">
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="0.0"
           value={amount}
           readOnly={readOnly}
           onChange={(e) =>
-            type === "from" && setFromAmount(e.target.value)
+            type === "from"
+              ? setFromAmount(e.target.value)
+              : setToAmount(e.target.value)
           }
-          placeholder="0.0"
+          className="bg-transparent text-xl font-medium outline-none w-full"
         />
 
-        <Button onClick={() => setOpen(true)}>
-          {token
-            ? token.slice(0, 6) + "..."
-            : "Select"}
-        </Button>
-
-        {type === "from" && (
-          <Button
-            variant="secondary"
+        {!readOnly && (
+          <button
             onClick={handleMax}
+            className="text-xs px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition"
           >
-            MAX
-          </Button>
+            Max
+          </button>
         )}
       </div>
-
-      <TokenListModal
-        open={open}
-        onClose={() => setOpen(false)}
-        onSelect={handleSelect}
-      />
     </div>
   );
 }
