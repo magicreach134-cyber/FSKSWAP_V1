@@ -9,8 +9,9 @@ interface SwapState {
   toAmount: string;
 
   slippage: number;
+  deadlineMinutes: number;
 
-  // 🔥 New Professional Fields
+  // Advanced Fields
   priceImpact: number;
   route: Address[];
   hasLiquidity: boolean;
@@ -22,6 +23,7 @@ interface SwapState {
   setFromAmount: (amount: string) => void;
   setToAmount: (amount: string) => void;
   setSlippage: (value: number) => void;
+  setDeadline: (value: number) => void;
 
   setPriceImpact: (impact: number) => void;
   setRoute: (route: Address[]) => void;
@@ -39,8 +41,8 @@ export const useSwapStore = create<SwapState>((set) => ({
   toAmount: "",
 
   slippage: 0.5,
+  deadlineMinutes: 20,
 
-  // 🔥 New Defaults
   priceImpact: 0,
   route: [],
   hasLiquidity: true,
@@ -50,10 +52,18 @@ export const useSwapStore = create<SwapState>((set) => ({
   // Basic setters
   // -----------------------------
   setFromToken: (token) =>
-    set({ fromToken: token, toAmount: "", priceImpact: 0 }),
+    set({
+      fromToken: token,
+      toAmount: "",
+      priceImpact: 0,
+    }),
 
   setToToken: (token) =>
-    set({ toToken: token, toAmount: "", priceImpact: 0 }),
+    set({
+      toToken: token,
+      toAmount: "",
+      priceImpact: 0,
+    }),
 
   setFromAmount: (amount) =>
     set({ fromAmount: amount }),
@@ -63,6 +73,9 @@ export const useSwapStore = create<SwapState>((set) => ({
 
   setSlippage: (value) =>
     set({ slippage: value }),
+
+  setDeadline: (value) =>
+    set({ deadlineMinutes: value }),
 
   // -----------------------------
   // Advanced setters
@@ -88,6 +101,8 @@ export const useSwapStore = create<SwapState>((set) => ({
       toToken: undefined,
       fromAmount: "",
       toAmount: "",
+      slippage: 0.5,
+      deadlineMinutes: 20,
       priceImpact: 0,
       route: [],
       hasLiquidity: true,
