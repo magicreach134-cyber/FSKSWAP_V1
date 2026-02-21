@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button, Card, Spinner } from "@/components/ui";
 import { useSwap } from "@/hooks/useSwap";
 import { useSwapStore } from "@/store/swapStore";
 import { useWalletStore } from "@/store/walletStore";
+import { balanceOf } from "@/services/erc20Service";
+import { publicClient } from "@/lib/publicClient";
+import { parseUnits, formatUnits } from "viem";
 
 import TokenSelector from "./TokenSelector";
 import PriceImpact from "./PriceImpact";
@@ -12,6 +15,8 @@ import RoutePreview from "./RoutePreview";
 import MinimumReceived from "./MinimumReceived";
 import LiquidityProviderFee from "./LiquidityProviderFee";
 import SwapSettings from "./SwapSettings";
+
+import { NATIVE_TOKEN_ADDRESS } from "@/config/native";
 
 export default function SwapWidget() {
   const { fetchQuote, executeSwap } = useSwap();
@@ -27,16 +32,53 @@ export default function SwapWidget() {
     slippage,
   } = useSwapStore();
 
-  const { connected } = useWalletStore();
+  const { connected, address } = useWalletStore();
+
+  const [balance, setBalance] = useState<bigint>(0n);
 
   // --------------------------------
-  // Auto quote on change
+  // Fetch balance
+  // --------------------------------
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!address || !fromToken) return;
+
+      if (fromToken === NATIVE_TOKEN_ADDRESS) {
+        const nativeBalance = await publicClient.getBalance({
+          address,
+        });
+        setBalance(nativeBalance);
+      } else {
+        const bal = await balanceOf(fromToken, address);
+        setBalance(bal);
+      }
+    };
+
+    fetchBalance();
+  }, [address, fromToken]);
+
+  // --------------------------------
+  // Auto quote
   // --------------------------------
   useEffect(() => {
     if (fromAmount && fromToken && toToken) {
       fetchQuote();
     }
   }, [fromAmount, fromToken, toToken]);
+
+  // --------------------------------
+  // Balance validation
+  // --------------------------------
+  let insufficientBalance = false;
+
+  try {
+    if (fromAmount && fromToken) {
+      const parsed = parseUnits(fromAmount || "0", 18);
+      insufficientBalance = parsed > balance;
+    }
+  } catch {
+    insufficientBalance = true;
+  }
 
   const highImpact = priceImpact > 5;
   const highSlippage = slippage > 3;
@@ -48,7 +90,8 @@ export default function SwapWidget() {
     !toToken ||
     !hasLiquidity ||
     isQuoting ||
-    highImpact;
+    highImpact ||
+    insufficientBalance;
 
   return (
     <Card className="p-6 space-y-6 w-full max-w-md mx-auto">
@@ -58,7 +101,7 @@ export default function SwapWidget() {
         <SwapSettings />
       </div>
 
-      {/* Token Selectors */}
+      {/* Token selectors */}
       <div className="space-y-4">
         <TokenSelector type="from" />
 
@@ -69,7 +112,6 @@ export default function SwapWidget() {
         <TokenSelector type="to" readOnly />
       </div>
 
-      {/* Quoting spinner */}
       {isQuoting && (
         <div className="flex justify-center">
           <Spinner />
@@ -77,6 +119,12 @@ export default function SwapWidget() {
       )}
 
       {/* Warnings */}
+      {insufficientBalance && (
+        <div className="text-red-500 text-sm text-center">
+          Insufficient balance
+        </div>
+      )}
+
       {highSlippage && (
         <div className="text-yellow-500 text-sm text-center">
           High slippage tolerance
@@ -105,7 +153,6 @@ export default function SwapWidget() {
         </div>
       )}
 
-      {/* Swap button */}
       <Button
         fullWidth
         disabled={disabled}
@@ -113,6 +160,8 @@ export default function SwapWidget() {
       >
         {!connected
           ? "Connect Wallet"
+          : insufficientBalance
+          ? "Insufficient Balance"
           : !hasLiquidity
           ? "No Liquidity"
           : isQuoting
