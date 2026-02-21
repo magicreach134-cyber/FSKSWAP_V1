@@ -30,6 +30,8 @@ interface SwapState {
   setHasLiquidity: (value: boolean) => void;
   setIsQuoting: (value: boolean) => void;
 
+  swapTokens: () => void;
+
   reset: () => void;
 }
 
@@ -91,6 +93,19 @@ export const useSwapStore = create<SwapState>((set) => ({
 
   setIsQuoting: (value) =>
     set({ isQuoting: value }),
+
+  // -----------------------------
+  // Swap direction toggle
+  // -----------------------------
+  swapTokens: () =>
+    set((state) => ({
+      fromToken: state.toToken,
+      toToken: state.fromToken,
+      fromAmount: state.toAmount,
+      toAmount: state.fromAmount,
+      priceImpact: 0,
+      route: [],
+    })),
 
   // -----------------------------
   // Reset
