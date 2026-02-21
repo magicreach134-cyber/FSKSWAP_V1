@@ -20,7 +20,7 @@ import SwapSettings from "./SwapSettings";
 import { NATIVE_TOKEN_ADDRESS } from "@/config/native";
 
 export default function SwapWidget() {
-  const { fetchQuote, executeSwap } = useSwap();
+  const { fetchQuote, executeSwap, needsApproval, approveToken } = useSwap();
 
   const {
     fromToken,
@@ -38,6 +38,7 @@ export default function SwapWidget() {
 
   const [balance, setBalance] = useState<bigint>(0n);
   const [tokenDecimals, setTokenDecimals] = useState(18);
+  const [requiresApproval, setRequiresApproval] = useState(false);
 
   // --------------------------------
   // Fetch balance + decimals
@@ -71,6 +72,23 @@ export default function SwapWidget() {
       fetchQuote();
     }
   }, [fromAmount, fromToken, toToken]);
+
+  // --------------------------------
+  // Check approval requirement
+  // --------------------------------
+  useEffect(() => {
+    const checkApproval = async () => {
+      if (!fromAmount || !fromToken || !connected) {
+        setRequiresApproval(false);
+        return;
+      }
+
+      const result = await needsApproval();
+      setRequiresApproval(result);
+    };
+
+    checkApproval();
+  }, [fromAmount, fromToken, connected]);
 
   // --------------------------------
   // Balance validation
@@ -111,7 +129,6 @@ export default function SwapWidget() {
       <div className="space-y-4">
         <TokenSelector type="from" />
 
-        {/* Direction Toggle */}
         <div className="flex justify-center">
           <button
             onClick={swapTokens}
@@ -172,10 +189,11 @@ export default function SwapWidget() {
         </div>
       )}
 
+      {/* Dynamic Button */}
       <Button
         fullWidth
         disabled={disabled}
-        onClick={executeSwap}
+        onClick={requiresApproval ? approveToken : executeSwap}
       >
         {!connected
           ? "Connect Wallet"
@@ -187,6 +205,8 @@ export default function SwapWidget() {
           ? "Fetching..."
           : highImpact
           ? "Impact Too High"
+          : requiresApproval
+          ? "Approve"
           : "Swap"}
       </Button>
     </Card>
