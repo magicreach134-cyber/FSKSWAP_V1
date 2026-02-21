@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { Card, Button, Spinner } from "@/components/ui";
-import { formatUnits, parseUnits } from "viem";
+import { formatUnits } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import { allowance, approve } from "@/services/erc20Service";
 import { useWalletStore } from "@/store/walletStore";
 import { useTransactionStore } from "@/store/transactionStore";
 import { useFarm } from "@/hooks/useFarm";
-import { poolInfo } from "@/services/farmService";
 import { CONTRACTS } from "@/config";
+import FSKPair_ABI from "@/abi/FSKPair.json";
 
 interface Props {
   pid: number;
@@ -28,16 +28,14 @@ export default function FarmCard({
 }: Props) {
   const { address, connected } = useWalletStore();
   const txStore = useTransactionStore();
-  const { refresh, stake, unstake, harvest } = useFarm(pid);
+  const { stake, unstake, harvest } = useFarm(pid);
 
+  const [lpBalance, setLpBalance] = useState<bigint>(0n);
   const [totalStaked, setTotalStaked] = useState<bigint>(0n);
-  const [userStaked, setUserStaked] = useState<bigint>(0n);
-  const [pending, setPending] = useState<bigint>(0n);
-  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
   // --------------------------------
-  // Fetch Pool + User Info
+  // Fetch LP Balance + Total Staked
   // --------------------------------
   useEffect(() => {
     async function load() {
@@ -45,12 +43,23 @@ export default function FarmCard({
 
       setLoading(true);
 
-      const pool = await poolInfo(pid);
-      const data = await refresh();
+      const [userBal, total] = await Promise.all([
+        publicClient.readContract({
+          address: lpToken,
+          abi: FSKPair_ABI,
+          functionName: "balanceOf",
+          args: [address],
+        }),
+        publicClient.readContract({
+          address: lpToken,
+          abi: FSKPair_ABI,
+          functionName: "balanceOf",
+          args: [CONTRACTS.staking],
+        }),
+      ]);
 
-      setTotalStaked(pool.totalDeposit || 0n);
-      setUserStaked(data?.staked || 0n);
-      setPending(data?.pending || 0n);
+      setLpBalance(userBal);
+      setTotalStaked(total);
 
       setLoading(false);
     }
@@ -62,11 +71,9 @@ export default function FarmCard({
   // Stake Handler
   // --------------------------------
   async function handleStake() {
-    if (!input || !address) return;
+    if (!address) return;
 
     try {
-      const amount = parseUnits(input, lpDecimals);
-
       txStore.open();
       txStore.setTitle("Stake LP");
       txStore.setStatus("prompting");
@@ -77,12 +84,13 @@ export default function FarmCard({
         CONTRACTS.staking
       );
 
-      if (currentAllowance < amount) {
+      if (currentAllowance < lpBalance) {
         txStore.setStatus("approving");
+
         const approveHash = await approve(
           lpToken,
           CONTRACTS.staking,
-          amount,
+          lpBalance,
           address
         );
 
@@ -91,26 +99,17 @@ export default function FarmCard({
         });
       }
 
-      await stake(amount);
-      setInput("");
+      await stake();
     } catch (err: any) {
       txStore.setError(err?.message);
       txStore.setStatus("error");
     }
   }
 
-  // --------------------------------
-  // Unstake Handler
-  // --------------------------------
-  async function handleUnstake() {
-    if (!input) return;
-    const amount = parseUnits(input, lpDecimals);
-    await unstake(amount);
-    setInput("");
-  }
-
   const disabled =
-    !connected || loading;
+    !connected ||
+    loading ||
+    lpBalance === 0n;
 
   return (
     <Card className="p-6 space-y-5 w-full max-w-md mx-auto">
@@ -130,27 +129,15 @@ export default function FarmCard({
         </div>
       )}
 
-      {/* Pool Stats */}
+      {/* Stats */}
       <div className="text-sm space-y-1">
+        <div>
+          Your LP Balance: {formatUnits(lpBalance, lpDecimals)}
+        </div>
         <div>
           Total Staked: {formatUnits(totalStaked, lpDecimals)}
         </div>
-        <div>
-          Your Stake: {formatUnits(userStaked, lpDecimals)}
-        </div>
-        <div>
-          Pending {rewardSymbol}:{" "}
-          {formatUnits(pending, 18)}
-        </div>
       </div>
-
-      {/* Input */}
-      <input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder="0.0"
-        className="w-full px-3 py-2 rounded-lg border dark:bg-gray-900"
-      />
 
       {/* Actions */}
       <div className="flex gap-2">
@@ -159,14 +146,14 @@ export default function FarmCard({
           disabled={disabled}
           onClick={handleStake}
         >
-          Stake
+          Stake All
         </Button>
 
         <Button
           fullWidth
           variant="secondary"
-          disabled={disabled}
-          onClick={handleUnstake}
+          disabled={!connected}
+          onClick={unstake}
         >
           Unstake
         </Button>
@@ -175,10 +162,10 @@ export default function FarmCard({
       <Button
         fullWidth
         variant="outline"
-        disabled={!pending || pending === 0n}
+        disabled={!connected}
         onClick={harvest}
       >
-        Harvest
+        Claim {rewardSymbol}
       </Button>
     </Card>
   );
