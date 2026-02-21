@@ -11,7 +11,13 @@ import {
   decimals as getDecimals,
 } from "@/services/erc20Service";
 
+import {
+  getPairAddress,
+  getAlignedReserves,
+} from "@/services/pairService";
+
 import { calculateMinOut } from "@/utils/calculateMinOut";
+import { calculatePriceImpact } from "@/utils/calculatePriceImpact";
 import { getDeadline } from "@/utils/deadline";
 
 import { parseUnits, BaseError } from "viem";
@@ -33,6 +39,10 @@ export function useSwap() {
     toAmount,
     setToAmount,
     slippage,
+    setPriceImpact,
+    setRoute,
+    setHasLiquidity,
+    setIsQuoting,
   } = useSwapStore();
 
   const { address } = useWalletStore();
@@ -44,32 +54,69 @@ export function useSwap() {
   const fetchQuote = async () => {
     if (!fromToken || !toToken || !fromAmount) return;
 
-    const inputDecimals =
-      fromToken === NATIVE_TOKEN_ADDRESS
+    try {
+      setIsQuoting(true);
+
+      const isNativeIn = fromToken === NATIVE_TOKEN_ADDRESS;
+      const isNativeOut = toToken === NATIVE_TOKEN_ADDRESS;
+
+      const inputDecimals = isNativeIn
         ? 18
         : await getDecimals(fromToken);
 
-    const outputDecimals =
-      toToken === NATIVE_TOKEN_ADDRESS
+      const outputDecimals = isNativeOut
         ? 18
         : await getDecimals(toToken);
 
-    const path =
-      fromToken === NATIVE_TOKEN_ADDRESS
+      const path = isNativeIn
         ? [WRAPPED_BNB_ADDRESS, toToken]
-        : toToken === NATIVE_TOKEN_ADDRESS
+        : isNativeOut
         ? [fromToken, WRAPPED_BNB_ADDRESS]
         : [fromToken, toToken];
 
-    const amountOut = await getQuote({
-      routerAddress: ROUTER_ADDRESS,
-      amountIn: fromAmount,
-      path,
-      inputDecimals,
-      outputDecimals,
-    });
+      setRoute(path);
 
-    setToAmount(amountOut);
+      const amountOut = await getQuote({
+        routerAddress: ROUTER_ADDRESS,
+        amountIn: fromAmount,
+        path,
+        inputDecimals,
+        outputDecimals,
+      });
+
+      setToAmount(amountOut);
+
+      // -----------------------------
+      // PRICE IMPACT
+      // -----------------------------
+      const amountInParsed = parseUnits(fromAmount, inputDecimals);
+
+      const pair = await getPairAddress(path[0], path[1]);
+
+      if (!pair) {
+        setHasLiquidity(false);
+        setPriceImpact(0);
+        return;
+      }
+
+      setHasLiquidity(true);
+
+      const { reserveIn, reserveOut } =
+        await getAlignedReserves(pair, path[0]);
+
+      const impact = calculatePriceImpact(
+        amountInParsed,
+        reserveIn,
+        reserveOut
+      );
+
+      setPriceImpact(impact);
+    } catch {
+      setHasLiquidity(false);
+      setPriceImpact(0);
+    } finally {
+      setIsQuoting(false);
+    }
   };
 
   // --------------------------------
@@ -153,7 +200,7 @@ export function useSwap() {
       }
 
       // --------------------------------
-      // SIMULATE (REVERT CHECK)
+      // SIMULATE
       // --------------------------------
       await publicClient.simulateContract({
         address: ROUTER_ADDRESS,
