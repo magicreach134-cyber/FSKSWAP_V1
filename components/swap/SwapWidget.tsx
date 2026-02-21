@@ -5,9 +5,10 @@ import { Button, Card, Spinner } from "@/components/ui";
 import { useSwap } from "@/hooks/useSwap";
 import { useSwapStore } from "@/store/swapStore";
 import { useWalletStore } from "@/store/walletStore";
-import { balanceOf } from "@/services/erc20Service";
+import { balanceOf, decimals as getDecimals } from "@/services/erc20Service";
 import { publicClient } from "@/lib/publicClient";
 import { parseUnits, formatUnits } from "viem";
+import { ArrowUpDown } from "lucide-react";
 
 import TokenSelector from "./TokenSelector";
 import PriceImpact from "./PriceImpact";
@@ -30,27 +31,32 @@ export default function SwapWidget() {
     hasLiquidity,
     isQuoting,
     slippage,
+    swapTokens,
   } = useSwapStore();
 
   const { connected, address } = useWalletStore();
 
   const [balance, setBalance] = useState<bigint>(0n);
+  const [tokenDecimals, setTokenDecimals] = useState(18);
 
   // --------------------------------
-  // Fetch balance
+  // Fetch balance + decimals
   // --------------------------------
   useEffect(() => {
     const fetchBalance = async () => {
       if (!address || !fromToken) return;
 
       if (fromToken === NATIVE_TOKEN_ADDRESS) {
-        const nativeBalance = await publicClient.getBalance({
-          address,
-        });
+        const nativeBalance = await publicClient.getBalance({ address });
         setBalance(nativeBalance);
+        setTokenDecimals(18);
       } else {
-        const bal = await balanceOf(fromToken, address);
+        const [bal, dec] = await Promise.all([
+          balanceOf(fromToken, address),
+          getDecimals(fromToken),
+        ]);
         setBalance(bal);
+        setTokenDecimals(dec);
       }
     };
 
@@ -73,7 +79,7 @@ export default function SwapWidget() {
 
   try {
     if (fromAmount && fromToken) {
-      const parsed = parseUnits(fromAmount || "0", 18);
+      const parsed = parseUnits(fromAmount || "0", tokenDecimals);
       insufficientBalance = parsed > balance;
     }
   } catch {
@@ -105,12 +111,25 @@ export default function SwapWidget() {
       <div className="space-y-4">
         <TokenSelector type="from" />
 
-        <div className="text-center text-muted-foreground text-sm">
-          ↓
+        {/* Direction Toggle */}
+        <div className="flex justify-center">
+          <button
+            onClick={swapTokens}
+            className="p-2 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+          >
+            <ArrowUpDown size={16} />
+          </button>
         </div>
 
         <TokenSelector type="to" readOnly />
       </div>
+
+      {/* Balance display */}
+      {fromToken && (
+        <div className="text-xs text-right text-muted-foreground">
+          Balance: {formatUnits(balance, tokenDecimals)}
+        </div>
+      )}
 
       {isQuoting && (
         <div className="flex justify-center">
