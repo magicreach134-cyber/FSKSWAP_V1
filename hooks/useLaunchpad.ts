@@ -1,3 +1,5 @@
+"use client";
+
 import {
   contribute,
   claim,
@@ -7,77 +9,179 @@ import {
   userInfo,
   isWhitelisted,
 } from "@/services";
+
 import {
   useLaunchpadStore,
   useWalletStore,
   useTransactionStore,
 } from "@/store";
-import { Address } from "viem";
+
+import { parseUnits, BaseError } from "viem";
+import { publicClient } from "@/lib/publicClient";
 
 export function useLaunchpad() {
-  const { presaleAddress, contributionAmount } = useLaunchpadStore();
+  const { presaleAddress, contributionAmount } =
+    useLaunchpadStore();
+
   const { address } = useWalletStore();
   const txStore = useTransactionStore();
 
+  // --------------------------------
+  // BUY
+  // --------------------------------
   async function buy() {
-    if (!presaleAddress || !contributionAmount) return;
+    if (!presaleAddress || !contributionAmount || !address)
+      return;
 
     try {
-      txStore.setStatus("pending");
-      const txHash = await contribute(
-        presaleAddress,
-        BigInt(contributionAmount)
+      txStore.open();
+      txStore.setTitle("Contribute to Presale");
+      txStore.setDescription(
+        "Confirm contribution in your wallet"
       );
-      txStore.setHash(txHash);
+      txStore.setStatus("prompting");
+
+      // Optional whitelist check
+      const whitelisted =
+        await isWhitelisted(
+          presaleAddress,
+          address
+        );
+
+      if (!whitelisted) {
+        throw new Error(
+          "You are not whitelisted for this sale"
+        );
+      }
+
+      const value = parseUnits(
+        contributionAmount,
+        18
+      );
+
+      const hash = await contribute(
+        presaleAddress,
+        value
+      );
+
+      txStore.setHash(hash);
+      txStore.setStatus("pending");
+
+      await publicClient.waitForTransactionReceipt({
+        hash,
+      });
+
       txStore.setStatus("success");
-    } catch (err: any) {
-      txStore.setError(err?.message);
+    } catch (err) {
+      let message =
+        "Contribution failed";
+
+      if (err instanceof BaseError) {
+        message =
+          err.shortMessage || message;
+      }
+
+      txStore.setError(message);
       txStore.setStatus("error");
     }
   }
 
+  // --------------------------------
+  // CLAIM
+  // --------------------------------
   async function claimTokens() {
-    if (!presaleAddress) return;
+    if (!presaleAddress || !address) return;
 
     try {
+      txStore.open();
+      txStore.setTitle("Claim Tokens");
+      txStore.setStatus("prompting");
+
+      const hash = await claim(
+        presaleAddress
+      );
+
+      txStore.setHash(hash);
       txStore.setStatus("pending");
-      const txHash = await claim(presaleAddress);
-      txStore.setHash(txHash);
+
+      await publicClient.waitForTransactionReceipt({
+        hash,
+      });
+
       txStore.setStatus("success");
     } catch (err: any) {
-      txStore.setError(err?.message);
+      txStore.setError(
+        err?.message || "Claim failed"
+      );
       txStore.setStatus("error");
     }
   }
 
+  // --------------------------------
+  // REFUND
+  // --------------------------------
   async function refundContribution() {
-    if (!presaleAddress) return;
+    if (!presaleAddress || !address) return;
 
     try {
+      txStore.open();
+      txStore.setTitle("Refund Contribution");
+      txStore.setStatus("prompting");
+
+      const hash = await refund(
+        presaleAddress
+      );
+
+      txStore.setHash(hash);
       txStore.setStatus("pending");
-      const txHash = await refund(presaleAddress);
-      txStore.setHash(txHash);
+
+      await publicClient.waitForTransactionReceipt({
+        hash,
+      });
+
       txStore.setStatus("success");
     } catch (err: any) {
-      txStore.setError(err?.message);
+      txStore.setError(
+        err?.message || "Refund failed"
+      );
       txStore.setStatus("error");
     }
   }
 
+  // --------------------------------
+  // FINALIZE
+  // --------------------------------
   async function finalizePresale() {
-    if (!presaleAddress) return;
+    if (!presaleAddress || !address) return;
 
     try {
+      txStore.open();
+      txStore.setTitle("Finalize Presale");
+      txStore.setStatus("prompting");
+
+      const hash = await finalize(
+        presaleAddress
+      );
+
+      txStore.setHash(hash);
       txStore.setStatus("pending");
-      const txHash = await finalize(presaleAddress);
-      txStore.setHash(txHash);
+
+      await publicClient.waitForTransactionReceipt({
+        hash,
+      });
+
       txStore.setStatus("success");
     } catch (err: any) {
-      txStore.setError(err?.message);
+      txStore.setError(
+        err?.message || "Finalize failed"
+      );
       txStore.setStatus("error");
     }
   }
 
+  // --------------------------------
+  // READ
+  // --------------------------------
   async function getInfo() {
     if (!presaleAddress) return;
     return presaleInfo(presaleAddress);
@@ -90,7 +194,10 @@ export function useLaunchpad() {
 
   async function checkWhitelistStatus() {
     if (!presaleAddress || !address) return;
-    return isWhitelisted(presaleAddress, address);
+    return isWhitelisted(
+      presaleAddress,
+      address
+    );
   }
 
   return {
