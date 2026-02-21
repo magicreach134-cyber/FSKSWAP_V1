@@ -4,7 +4,7 @@ import { CONTRACTS } from "@/config";
 import { Address } from "viem";
 
 /* =========================================
-   WRITE FUNCTIONS
+   WRITE
 ========================================= */
 
 export async function deposit(
@@ -37,22 +37,8 @@ export async function withdraw(
   });
 }
 
-export async function emergencyWithdraw(
-  pid: number
-) {
-  const [account] = await walletClient.getAddresses();
-
-  return walletClient.writeContract({
-    address: CONTRACTS.staking,
-    abi: stakingAbi,
-    functionName: "emergencyWithdraw",
-    args: [BigInt(pid)],
-    account,
-  });
-}
-
 /* =========================================
-   READ FUNCTIONS
+   READ
 ========================================= */
 
 export async function pendingReward(
@@ -64,15 +50,6 @@ export async function pendingReward(
     abi: stakingAbi,
     functionName: "pendingReward",
     args: [BigInt(pid), user],
-  });
-}
-
-export async function poolInfo(pid: number) {
-  return publicClient.readContract({
-    address: CONTRACTS.staking,
-    abi: stakingAbi,
-    functionName: "poolInfo",
-    args: [BigInt(pid)],
   });
 }
 
@@ -88,10 +65,11 @@ export async function userInfo(
   });
 }
 
-export async function totalAllocPoint() {
+export async function poolInfo(pid: number) {
   return publicClient.readContract({
     address: CONTRACTS.staking,
     abi: stakingAbi,
-    functionName: "totalAllocPoint",
+    functionName: "poolInfo",
+    args: [BigInt(pid)],
   });
 }
