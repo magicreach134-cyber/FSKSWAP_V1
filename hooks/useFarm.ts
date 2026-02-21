@@ -2,34 +2,14 @@
 
 import { useWalletStore } from "@/store/walletStore";
 import { useTransactionStore } from "@/store/transactionStore";
-import {
-  deposit,
-  withdraw,
-  pendingReward,
-  userInfo,
-} from "@/services/farmService";
+import { deposit, withdraw, claimRewards } from "@/services/farmService";
 import { publicClient } from "@/lib/publicClient";
 
 export function useFarm(pid: number) {
   const { address } = useWalletStore();
   const txStore = useTransactionStore();
 
-  async function refresh() {
-    if (!address) return;
-
-    const [user, pending] = await Promise.all([
-      userInfo(pid, address),
-      pendingReward(pid, address),
-    ]);
-
-    return {
-      staked: user.amount,
-      rewardDebt: user.rewardDebt,
-      pending,
-    };
-  }
-
-  async function stake(amount: bigint) {
+  async function stake() {
     if (!address) return;
 
     try {
@@ -37,7 +17,7 @@ export function useFarm(pid: number) {
       txStore.setTitle("Stake LP");
       txStore.setStatus("prompting");
 
-      const hash = await deposit(pid, amount);
+      const hash = await deposit(pid);
 
       txStore.setHash(hash);
       txStore.setStatus("pending");
@@ -51,7 +31,7 @@ export function useFarm(pid: number) {
     }
   }
 
-  async function unstake(amount: bigint) {
+  async function unstake() {
     if (!address) return;
 
     try {
@@ -59,7 +39,7 @@ export function useFarm(pid: number) {
       txStore.setTitle("Unstake LP");
       txStore.setStatus("prompting");
 
-      const hash = await withdraw(pid, amount);
+      const hash = await withdraw(pid);
 
       txStore.setHash(hash);
       txStore.setStatus("pending");
@@ -76,14 +56,24 @@ export function useFarm(pid: number) {
   async function harvest() {
     if (!address) return;
 
-    // In MasterChef contracts, harvest = deposit(pid, 0)
-    await stake(0n);
+    try {
+      txStore.open();
+      txStore.setTitle("Claim Rewards");
+      txStore.setStatus("prompting");
+
+      const hash = await claimRewards(pid);
+
+      txStore.setHash(hash);
+      txStore.setStatus("pending");
+
+      await publicClient.waitForTransactionReceipt({ hash });
+
+      txStore.setStatus("success");
+    } catch (err: any) {
+      txStore.setError(err?.message);
+      txStore.setStatus("error");
+    }
   }
 
-  return {
-    refresh,
-    stake,
-    unstake,
-    harvest,
-  };
+  return { stake, unstake, harvest };
 }
