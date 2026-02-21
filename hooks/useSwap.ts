@@ -16,6 +16,8 @@ import {
   getAlignedReserves,
 } from "@/services/pairService";
 
+import { resolveBestPath } from "@/services/routeService";
+
 import { calculateMinOut } from "@/utils/calculateMinOut";
 import { calculatePriceImpact } from "@/utils/calculatePriceImpact";
 import { getDeadline } from "@/utils/deadline";
@@ -49,7 +51,7 @@ export function useSwap() {
   const txStore = useTransactionStore();
 
   // --------------------------------
-  // QUOTE
+  // QUOTE (Multi-hop Enabled)
   // --------------------------------
   const fetchQuote = async () => {
     if (!fromToken || !toToken || !fromAmount) return;
@@ -60,6 +62,14 @@ export function useSwap() {
       const isNativeIn = fromToken === NATIVE_TOKEN_ADDRESS;
       const isNativeOut = toToken === NATIVE_TOKEN_ADDRESS;
 
+      const tokenIn = isNativeIn
+        ? WRAPPED_BNB_ADDRESS
+        : fromToken;
+
+      const tokenOut = isNativeOut
+        ? WRAPPED_BNB_ADDRESS
+        : toToken;
+
       const inputDecimals = isNativeIn
         ? 18
         : await getDecimals(fromToken);
@@ -68,52 +78,66 @@ export function useSwap() {
         ? 18
         : await getDecimals(toToken);
 
-      const path = isNativeIn
-        ? [WRAPPED_BNB_ADDRESS, toToken]
-        : isNativeOut
-        ? [fromToken, WRAPPED_BNB_ADDRESS]
-        : [fromToken, toToken];
+      // Resolve best path (direct or via WBNB)
+      const resolvedPath = await resolveBestPath(
+        tokenIn,
+        tokenOut
+      );
 
-      setRoute(path);
+      if (!resolvedPath) {
+        setHasLiquidity(false);
+        setPriceImpact(0);
+        setToAmount("");
+        return;
+      }
+
+      setRoute(resolvedPath);
+      setHasLiquidity(true);
 
       const amountOut = await getQuote({
         routerAddress: ROUTER_ADDRESS,
         amountIn: fromAmount,
-        path,
+        path: resolvedPath,
         inputDecimals,
         outputDecimals,
       });
 
       setToAmount(amountOut);
 
-      // -----------------------------
-      // PRICE IMPACT
-      // -----------------------------
-      const amountInParsed = parseUnits(fromAmount, inputDecimals);
+      // Price impact only for direct pools
+      if (resolvedPath.length === 2) {
+        const amountInParsed = parseUnits(
+          fromAmount,
+          inputDecimals
+        );
 
-      const pair = await getPairAddress(path[0], path[1]);
+        const pair = await getPairAddress(
+          resolvedPath[0],
+          resolvedPath[1]
+        );
 
-      if (!pair) {
-        setHasLiquidity(false);
+        if (pair) {
+          const { reserveIn, reserveOut } =
+            await getAlignedReserves(
+              pair,
+              resolvedPath[0]
+            );
+
+          const impact = calculatePriceImpact(
+            amountInParsed,
+            reserveIn,
+            reserveOut
+          );
+
+          setPriceImpact(impact);
+        }
+      } else {
         setPriceImpact(0);
-        return;
       }
-
-      setHasLiquidity(true);
-
-      const { reserveIn, reserveOut } =
-        await getAlignedReserves(pair, path[0]);
-
-      const impact = calculatePriceImpact(
-        amountInParsed,
-        reserveIn,
-        reserveOut
-      );
-
-      setPriceImpact(impact);
     } catch {
       setHasLiquidity(false);
       setPriceImpact(0);
+      setToAmount("");
     } finally {
       setIsQuoting(false);
     }
@@ -125,12 +149,21 @@ export function useSwap() {
   const executeSwap = async () => {
     try {
       if (!address) throw new Error("Wallet not connected");
-      if (!fromToken || !toToken)
-        throw new Error("Token selection incomplete");
+
+      const {
+        fromToken,
+        toToken,
+        route,
+      } = useSwapStore.getState();
+
+      if (!fromToken || !toToken || route.length === 0)
+        throw new Error("Invalid swap route");
 
       txStore.open();
       txStore.setTitle("Confirm Swap");
-      txStore.setDescription("Confirm this transaction in your wallet");
+      txStore.setDescription(
+        "Confirm this transaction in your wallet"
+      );
       txStore.setStatus("prompting");
 
       const walletClient = getWalletClient();
@@ -156,12 +189,6 @@ export function useSwap() {
 
       const deadline = getDeadline(20);
 
-      const path = isNativeIn
-        ? [WRAPPED_BNB_ADDRESS, toToken]
-        : isNativeOut
-        ? [fromToken, WRAPPED_BNB_ADDRESS]
-        : [fromToken, toToken];
-
       const functionName = isNativeIn
         ? "swapExactETHForTokens"
         : isNativeOut
@@ -169,7 +196,7 @@ export function useSwap() {
         : "swapExactTokensForTokens";
 
       // --------------------------------
-      // APPROVAL
+      // APPROVAL (if needed)
       // --------------------------------
       if (!isNativeIn) {
         const currentAllowance = await allowance(
@@ -207,8 +234,8 @@ export function useSwap() {
         abi: FSKRouterV3_ABI,
         functionName,
         args: isNativeIn
-          ? [minOut, path, address, deadline]
-          : [amountIn, minOut, path, address, deadline],
+          ? [minOut, route, address, deadline]
+          : [amountIn, minOut, route, address, deadline],
         value: isNativeIn ? amountIn : undefined,
         account: address,
       });
@@ -221,22 +248,22 @@ export function useSwap() {
         abi: FSKRouterV3_ABI,
         functionName,
         args: isNativeIn
-          ? [minOut, path, address, deadline]
-          : [amountIn, minOut, path, address, deadline],
+          ? [minOut, route, address, deadline]
+          : [amountIn, minOut, route, address, deadline],
         value: isNativeIn ? amountIn : undefined,
         account: address,
       });
 
       // --------------------------------
-      // SEND TX
+      // SEND TRANSACTION
       // --------------------------------
       const hash = await walletClient.writeContract({
         address: ROUTER_ADDRESS,
         abi: FSKRouterV3_ABI,
         functionName,
         args: isNativeIn
-          ? [minOut, path, address, deadline]
-          : [amountIn, minOut, path, address, deadline],
+          ? [minOut, route, address, deadline]
+          : [amountIn, minOut, route, address, deadline],
         value: isNativeIn ? amountIn : undefined,
         account: address,
         gas,
