@@ -1,24 +1,34 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, Button, Spinner } from "@/components/ui";
+import { Card, Button } from "@/components/ui";
 import { useLiquidityStore } from "@/store/liquidityStore";
 import { useWalletStore } from "@/store/walletStore";
 import { useTransactionStore } from "@/store/transactionStore";
-import { formatUnits, parseUnits } from "viem";
+
+import { formatUnits } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import { allowance, approve } from "@/services/erc20Service";
 import {
   removeLiquidity,
   removeLiquidityETH,
 } from "@/services/liquidityService";
+
 import { CONTRACTS } from "@/config";
 import { getDeadline } from "@/utils";
 import { NATIVE_TOKEN_ADDRESS } from "@/config/native";
+
+import FSKFactory_ABI from "@/abi/FSKFactoryV2.json";
 import FSKPair_ABI from "@/abi/FSKPair.json";
 
 export default function RemoveLiquidityWidget() {
-  const { tokenA, tokenB, slippage } = useLiquidityStore();
+  const {
+    tokenA,
+    tokenB,
+    slippage,
+    deadlineMinutes,
+  } = useLiquidityStore();
+
   const { address, connected } = useWalletStore();
   const txStore = useTransactionStore();
 
@@ -28,7 +38,7 @@ export default function RemoveLiquidityWidget() {
   const [loading, setLoading] = useState(false);
 
   // --------------------------------
-  // Fetch LP address + balance
+  // Fetch LP pair + balance
   // --------------------------------
   useEffect(() => {
     async function fetchLP() {
@@ -36,12 +46,13 @@ export default function RemoveLiquidityWidget() {
 
       const pair = await publicClient.readContract({
         address: CONTRACTS.factory,
-        abi: FSKPair_ABI,
+        abi: FSKFactory_ABI,
         functionName: "getPair",
         args: [tokenA, tokenB],
       });
 
-      if (!pair) return;
+      if (!pair || pair === "0x0000000000000000000000000000000000000000")
+        return;
 
       setLpAddress(pair);
 
@@ -79,6 +90,9 @@ export default function RemoveLiquidityWidget() {
       txStore.setTitle("Remove Liquidity");
       txStore.setStatus("prompting");
 
+      // --------------------------------
+      // Approve LP if needed
+      // --------------------------------
       const allowanceLP = await allowance(
         lpAddress,
         address,
@@ -87,31 +101,52 @@ export default function RemoveLiquidityWidget() {
 
       if (allowanceLP < liquidityToRemove) {
         txStore.setStatus("approving");
+
         const approveHash = await approve(
           lpAddress,
           CONTRACTS.router,
           liquidityToRemove,
           address
         );
+
         await publicClient.waitForTransactionReceipt({
           hash: approveHash,
         });
       }
 
+      // --------------------------------
+      // Get reserves to compute min amounts
+      // --------------------------------
+      const reserves = await publicClient.readContract({
+        address: lpAddress,
+        abi: FSKPair_ABI,
+        functionName: "getReserves",
+      });
+
+      const totalSupply = await publicClient.readContract({
+        address: lpAddress,
+        abi: FSKPair_ABI,
+        functionName: "totalSupply",
+      });
+
+      const amountAExpected =
+        (reserves[0] * liquidityToRemove) / totalSupply;
+
+      const amountBExpected =
+        (reserves[1] * liquidityToRemove) / totalSupply;
+
       const slippageBps = BigInt(Math.floor(slippage * 100));
       const denominator = 10000n;
 
       const amountAMin =
-        (liquidityToRemove *
-          (denominator - slippageBps)) /
+        (amountAExpected * (denominator - slippageBps)) /
         denominator;
 
       const amountBMin =
-        (liquidityToRemove *
-          (denominator - slippageBps)) /
+        (amountBExpected * (denominator - slippageBps)) /
         denominator;
 
-      const deadline = BigInt(getDeadline(20));
+      const deadline = BigInt(getDeadline(deadlineMinutes));
 
       const isNative =
         tokenA === NATIVE_TOKEN_ADDRESS ||
@@ -160,12 +195,10 @@ export default function RemoveLiquidityWidget() {
         Remove Liquidity
       </h2>
 
-      {/* LP Balance */}
       <div className="text-xs text-muted-foreground">
         LP Balance: {formatUnits(lpBalance, 18)}
       </div>
 
-      {/* Percentage Selector */}
       <div className="flex gap-2">
         {[25, 50, 75, 100].map((percent) => (
           <button
