@@ -11,15 +11,7 @@ import {
   decimals as getDecimals,
 } from "@/services/erc20Service";
 
-import {
-  getPairAddress,
-  getAlignedReserves,
-} from "@/services/pairService";
-
-import { resolveBestPath } from "@/services/routeService";
-
 import { calculateMinOut } from "@/utils/calculateMinOut";
-import { calculatePriceImpact } from "@/utils/calculatePriceImpact";
 import { getDeadline } from "@/utils/deadline";
 
 import { parseUnits, BaseError } from "viem";
@@ -39,107 +31,61 @@ export function useSwap() {
     toToken,
     fromAmount,
     toAmount,
-    setToAmount,
     slippage,
-    setPriceImpact,
-    setRoute,
-    setHasLiquidity,
-    setIsQuoting,
   } = useSwapStore();
 
   const { address } = useWalletStore();
   const txStore = useTransactionStore();
 
   // --------------------------------
-  // QUOTE (Multi-hop Enabled)
+  // CHECK APPROVAL
   // --------------------------------
-  const fetchQuote = async () => {
-    if (!fromToken || !toToken || !fromAmount) return;
+  const needsApproval = async () => {
+    if (!address || !fromToken) return false;
+    if (fromToken === NATIVE_TOKEN_ADDRESS) return false;
+
+    const decimals = await getDecimals(fromToken);
+    const amountIn = parseUnits(fromAmount, decimals);
+
+    const currentAllowance = await allowance(
+      fromToken,
+      address,
+      ROUTER_ADDRESS
+    );
+
+    return currentAllowance < amountIn;
+  };
+
+  // --------------------------------
+  // APPROVE TOKEN
+  // --------------------------------
+  const approveToken = async () => {
+    if (!address || !fromToken) return;
 
     try {
-      setIsQuoting(true);
+      txStore.open();
+      txStore.setTitle("Approve Token");
+      txStore.setDescription("Approve token spending");
+      txStore.setStatus("prompting");
 
-      const isNativeIn = fromToken === NATIVE_TOKEN_ADDRESS;
-      const isNativeOut = toToken === NATIVE_TOKEN_ADDRESS;
+      const decimals = await getDecimals(fromToken);
+      const amountIn = parseUnits(fromAmount, decimals);
 
-      const tokenIn = isNativeIn
-        ? WRAPPED_BNB_ADDRESS
-        : fromToken;
-
-      const tokenOut = isNativeOut
-        ? WRAPPED_BNB_ADDRESS
-        : toToken;
-
-      const inputDecimals = isNativeIn
-        ? 18
-        : await getDecimals(fromToken);
-
-      const outputDecimals = isNativeOut
-        ? 18
-        : await getDecimals(toToken);
-
-      // Resolve best path (direct or via WBNB)
-      const resolvedPath = await resolveBestPath(
-        tokenIn,
-        tokenOut
+      const hash = await approve(
+        fromToken,
+        ROUTER_ADDRESS,
+        amountIn,
+        address
       );
 
-      if (!resolvedPath) {
-        setHasLiquidity(false);
-        setPriceImpact(0);
-        setToAmount("");
-        return;
-      }
+      txStore.setHash(hash);
+      txStore.setStatus("pending");
 
-      setRoute(resolvedPath);
-      setHasLiquidity(true);
+      await publicClient.waitForTransactionReceipt({ hash });
 
-      const amountOut = await getQuote({
-        routerAddress: ROUTER_ADDRESS,
-        amountIn: fromAmount,
-        path: resolvedPath,
-        inputDecimals,
-        outputDecimals,
-      });
-
-      setToAmount(amountOut);
-
-      // Price impact only for direct pools
-      if (resolvedPath.length === 2) {
-        const amountInParsed = parseUnits(
-          fromAmount,
-          inputDecimals
-        );
-
-        const pair = await getPairAddress(
-          resolvedPath[0],
-          resolvedPath[1]
-        );
-
-        if (pair) {
-          const { reserveIn, reserveOut } =
-            await getAlignedReserves(
-              pair,
-              resolvedPath[0]
-            );
-
-          const impact = calculatePriceImpact(
-            amountInParsed,
-            reserveIn,
-            reserveOut
-          );
-
-          setPriceImpact(impact);
-        }
-      } else {
-        setPriceImpact(0);
-      }
-    } catch {
-      setHasLiquidity(false);
-      setPriceImpact(0);
-      setToAmount("");
-    } finally {
-      setIsQuoting(false);
+      txStore.setStatus("success");
+    } catch (err) {
+      txStore.setStatus("error");
     }
   };
 
@@ -148,22 +94,12 @@ export function useSwap() {
   // --------------------------------
   const executeSwap = async () => {
     try {
-      if (!address) throw new Error("Wallet not connected");
-
-      const {
-        fromToken,
-        toToken,
-        route,
-      } = useSwapStore.getState();
-
-      if (!fromToken || !toToken || route.length === 0)
-        throw new Error("Invalid swap route");
+      if (!address || !fromToken || !toToken)
+        throw new Error("Swap invalid");
 
       txStore.open();
       txStore.setTitle("Confirm Swap");
-      txStore.setDescription(
-        "Confirm this transaction in your wallet"
-      );
+      txStore.setDescription("Confirm transaction in wallet");
       txStore.setStatus("prompting");
 
       const walletClient = getWalletClient();
@@ -189,84 +125,27 @@ export function useSwap() {
 
       const deadline = getDeadline(20);
 
+      const path = isNativeIn
+        ? [WRAPPED_BNB_ADDRESS, toToken]
+        : isNativeOut
+        ? [fromToken, WRAPPED_BNB_ADDRESS]
+        : [fromToken, toToken];
+
       const functionName = isNativeIn
         ? "swapExactETHForTokens"
         : isNativeOut
         ? "swapExactTokensForETH"
         : "swapExactTokensForTokens";
 
-      // --------------------------------
-      // APPROVAL (if needed)
-      // --------------------------------
-      if (!isNativeIn) {
-        const currentAllowance = await allowance(
-          fromToken,
-          address,
-          ROUTER_ADDRESS
-        );
-
-        if (currentAllowance < amountIn) {
-          txStore.setTitle("Approve Token");
-          txStore.setDescription("Approve token spending");
-          txStore.setStatus("approving");
-
-          const approveHash = await approve(
-            fromToken,
-            ROUTER_ADDRESS,
-            amountIn,
-            address
-          );
-
-          txStore.setHash(approveHash);
-          txStore.setStatus("pending");
-
-          await publicClient.waitForTransactionReceipt({
-            hash: approveHash,
-          });
-        }
-      }
-
-      // --------------------------------
-      // SIMULATE
-      // --------------------------------
-      await publicClient.simulateContract({
-        address: ROUTER_ADDRESS,
-        abi: FSKRouterV3_ABI,
-        functionName,
-        args: isNativeIn
-          ? [minOut, route, address, deadline]
-          : [amountIn, minOut, route, address, deadline],
-        value: isNativeIn ? amountIn : undefined,
-        account: address,
-      });
-
-      // --------------------------------
-      // ESTIMATE GAS
-      // --------------------------------
-      const gas = await publicClient.estimateContractGas({
-        address: ROUTER_ADDRESS,
-        abi: FSKRouterV3_ABI,
-        functionName,
-        args: isNativeIn
-          ? [minOut, route, address, deadline]
-          : [amountIn, minOut, route, address, deadline],
-        value: isNativeIn ? amountIn : undefined,
-        account: address,
-      });
-
-      // --------------------------------
-      // SEND TRANSACTION
-      // --------------------------------
       const hash = await walletClient.writeContract({
         address: ROUTER_ADDRESS,
         abi: FSKRouterV3_ABI,
         functionName,
         args: isNativeIn
-          ? [minOut, route, address, deadline]
-          : [amountIn, minOut, route, address, deadline],
+          ? [minOut, path, address, deadline]
+          : [amountIn, minOut, path, address, deadline],
         value: isNativeIn ? amountIn : undefined,
         account: address,
-        gas,
       });
 
       txStore.setHash(hash);
@@ -277,18 +156,17 @@ export function useSwap() {
       txStore.setStatus("success");
     } catch (err) {
       let message = "Swap failed";
-
       if (err instanceof BaseError) {
         message = err.shortMessage || message;
       }
-
       txStore.setError(message);
       txStore.setStatus("error");
     }
   };
 
   return {
-    fetchQuote,
+    needsApproval,
+    approveToken,
     executeSwap,
   };
 }
