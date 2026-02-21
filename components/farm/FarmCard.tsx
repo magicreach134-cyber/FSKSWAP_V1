@@ -5,7 +5,11 @@ import { Card, Button, Spinner } from "@/components/ui";
 import { formatUnits } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import { useWalletStore } from "@/store/walletStore";
-import { userInfo, pendingReward } from "@/services/farmService";
+import {
+  userInfo,
+  pendingReward,
+  poolInfo,
+} from "@/services/farmService";
 import FSKPair_ABI from "@/abi/FSKPair.json";
 
 import ApproveFarmButton from "./ApproveFarmButton";
@@ -21,6 +25,8 @@ interface Props {
   lpDecimals?: number;
 }
 
+const BLOCKS_PER_YEAR = 10512000n; // ~3 sec block (BSC style)
+
 export default function FarmCard({
   pid,
   lpToken,
@@ -33,21 +39,27 @@ export default function FarmCard({
   const [lpBalance, setLpBalance] = useState<bigint>(0n);
   const [staked, setStaked] = useState<bigint>(0n);
   const [pending, setPending] = useState<bigint>(0n);
-  const [loading, setLoading] = useState(false);
 
+  const [rewardPerBlock, setRewardPerBlock] = useState<bigint>(0n);
+  const [totalStaked, setTotalStaked] = useState<bigint>(0n);
+
+  const [apr, setApr] = useState<number>(0);
+  const [tvl, setTvl] = useState<number>(0);
+
+  const [loading, setLoading] = useState(false);
   const [openStake, setOpenStake] = useState(false);
   const [openWithdraw, setOpenWithdraw] = useState(false);
 
   // --------------------------------
-  // Load Data
+  // Load Farm Data
   // --------------------------------
-  useEffect(() => {
-    async function load() {
-      if (!address) return;
+  async function load() {
+    if (!address) return;
 
-      setLoading(true);
+    setLoading(true);
 
-      const [bal, user, reward] = await Promise.all([
+    const [bal, user, reward, pool] =
+      await Promise.all([
         publicClient.readContract({
           address: lpToken,
           abi: FSKPair_ABI,
@@ -56,16 +68,51 @@ export default function FarmCard({
         }),
         userInfo(pid, address),
         pendingReward(pid, address),
+        poolInfo(pid),
       ]);
 
-      setLpBalance(bal);
-      setStaked(user.amount);
-      setPending(reward);
+    setLpBalance(bal);
+    setStaked(user.amount);
+    setPending(reward);
 
-      setLoading(false);
+    setRewardPerBlock(pool.rewardPerBlock);
+
+    // total staked = LP balance of staking contract
+    const total = await publicClient.readContract({
+      address: lpToken,
+      abi: FSKPair_ABI,
+      functionName: "balanceOf",
+      args: [pool.lpToken],
+    });
+
+    setTotalStaked(total);
+
+    // TVL (simplified: raw LP token count)
+    const tvlValue =
+      Number(formatUnits(total, lpDecimals));
+
+    setTvl(tvlValue);
+
+    // APR calculation
+    if (total > 0n) {
+      const yearlyRewards =
+        rewardPerBlock * BLOCKS_PER_YEAR;
+
+      const aprCalc =
+        Number(formatUnits(yearlyRewards, 18)) /
+        tvlValue;
+
+      setApr(aprCalc * 100);
     }
 
+    setLoading(false);
+  }
+
+  useEffect(() => {
     load();
+
+    const interval = setInterval(load, 15000); // 15 sec refresh
+    return () => clearInterval(interval);
   }, [address]);
 
   return (
@@ -82,6 +129,12 @@ export default function FarmCard({
 
         <div className="text-sm space-y-1">
           <div>
+            TVL: {tvl.toFixed(2)} LP
+          </div>
+          <div>
+            APR: {apr.toFixed(2)}%
+          </div>
+          <div>
             LP Balance: {formatUnits(lpBalance, lpDecimals)}
           </div>
           <div>
@@ -93,13 +146,11 @@ export default function FarmCard({
           </div>
         </div>
 
-        {/* Approve */}
         <ApproveFarmButton
           lpToken={lpToken}
           requiredAmount={lpBalance}
         />
 
-        {/* Stake / Withdraw */}
         <div className="flex gap-2">
           <Button
             fullWidth
@@ -119,14 +170,12 @@ export default function FarmCard({
           </Button>
         </div>
 
-        {/* Claim */}
         <ClaimButton
           pid={pid}
           disabled={pending === 0n}
         />
       </Card>
 
-      {/* Modals */}
       <StakeModal
         open={openStake}
         onClose={() => setOpenStake(false)}
