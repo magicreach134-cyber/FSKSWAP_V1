@@ -1,58 +1,113 @@
 "use client";
 
-import { Input, Button } from "@/components/ui";
-import Image from "next/image";
-import type { Token } from "./SwapWidget";
+import { useState, useEffect } from "react";
+import { Button, Input } from "@/components/ui";
+import { useSwapStore } from "@/store/swapStore";
+import { useWalletStore } from "@/store/walletStore";
+import { balanceOf } from "@/services/erc20Service";
+import { formatUnits } from "viem";
+import TokenListModal from "./TokenListModal";
+import { NATIVE_TOKEN_ADDRESS } from "@/config/native";
 
 interface Props {
-  label: string;
-  token: Token | null;
-  amount: string;
-  onAmountChange: (value: string) => void;
-  onSelectToken: () => void;
+  type: "from" | "to";
   readOnly?: boolean;
 }
 
-export default function TokenSelector({
-  label,
-  token,
-  amount,
-  onAmountChange,
-  onSelectToken,
-  readOnly,
-}: Props) {
+export default function TokenSelector({ type, readOnly }: Props) {
+  const {
+    fromToken,
+    toToken,
+    fromAmount,
+    setFromAmount,
+    setFromToken,
+    setToToken,
+  } = useSwapStore();
+
+  const { address } = useWalletStore();
+
+  const token = type === "from" ? fromToken : toToken;
+  const amount = type === "from" ? fromAmount : "";
+
+  const [open, setOpen] = useState(false);
+  const [balance, setBalance] = useState<string>("0");
+
+  // -------------------------
+  // Fetch balance
+  // -------------------------
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!address || !token) return;
+
+      if (token === NATIVE_TOKEN_ADDRESS) {
+        setBalance("0");
+        return;
+      }
+
+      const bal = await balanceOf(token, address);
+      setBalance(formatUnits(bal, 18));
+    };
+
+    fetchBalance();
+  }, [address, token]);
+
+  // -------------------------
+  // Auto switch logic
+  // -------------------------
+  const handleSelect = (selected: `0x${string}`) => {
+    if (type === "from") {
+      if (selected === toToken) {
+        setToToken(fromToken!);
+      }
+      setFromToken(selected);
+    } else {
+      if (selected === fromToken) {
+        setFromToken(toToken!);
+      }
+      setToToken(selected);
+    }
+  };
+
   return (
-    <div className="bg-[#1f2937] rounded-2xl p-4 space-y-3">
-      <div className="flex justify-between text-sm text-gray-400">
-        <span>{label}</span>
-        <span>Balance: 0.00</span>
+    <div className="space-y-2">
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>{type === "from" ? "From" : "To"}</span>
+        {type === "from" && (
+          <span>Balance: {Number(balance).toFixed(4)}</span>
+        )}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex gap-2">
         <Input
           value={amount}
-          onChange={(e) => onAmountChange(e.target.value)}
-          placeholder="0.0"
           readOnly={readOnly}
-          className="bg-transparent border-none text-lg focus:ring-0"
+          onChange={(e) =>
+            type === "from" && setFromAmount(e.target.value)
+          }
+          placeholder="0.0"
         />
 
-        <Button variant="secondary" onClick={onSelectToken}>
-          {token ? (
-            <div className="flex items-center gap-2">
-              <Image
-                src={token.logo}
-                alt={token.symbol}
-                width={20}
-                height={20}
-              />
-              {token.symbol}
-            </div>
-          ) : (
-            "Select"
-          )}
+        <Button onClick={() => setOpen(true)}>
+          {token
+            ? token.slice(0, 6) + "..."
+            : "Select"}
         </Button>
+
+        {type === "from" && (
+          <Button
+            variant="secondary"
+            onClick={() => setFromAmount(balance)}
+          >
+            MAX
+          </Button>
+        )}
       </div>
+
+      <TokenListModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onSelect={handleSelect}
+      />
     </div>
   );
 }
