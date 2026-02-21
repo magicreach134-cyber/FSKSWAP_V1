@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Card, Button, Spinner } from "@/components/ui";
 import { formatUnits } from "viem";
 import { publicClient } from "@/lib/publicClient";
@@ -12,6 +12,7 @@ import {
 } from "@/services/stakingService";
 import { useStaking } from "@/hooks/useStaking";
 import ERC20_ABI from "@/abi/ERC20.json";
+import { CONTRACTS } from "@/config";
 
 interface Props {
   pid: number;
@@ -20,6 +21,8 @@ interface Props {
   rewardSymbol: string;
   decimals?: number;
 }
+
+const BLOCKS_PER_YEAR = 10512000n; // ~3s block time (BSC style)
 
 export default function StakingCard({
   pid,
@@ -35,47 +38,108 @@ export default function StakingCard({
   const [balance, setBalance] = useState<bigint>(0n);
   const [staked, setStaked] = useState<bigint>(0n);
   const [pending, setPending] = useState<bigint>(0n);
+  const [rewardPerBlock, setRewardPerBlock] =
+    useState<bigint>(0n);
+  const [totalStaked, setTotalStaked] =
+    useState<bigint>(0n);
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function load() {
+  // --------------------------------
+  // Load Data
+  // --------------------------------
+  const load = useCallback(async () => {
     if (!address) return;
 
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const [bal, user, reward] =
-      await Promise.all([
-        publicClient.readContract({
-          address: token,
-          abi: ERC20_ABI,
-          functionName: "balanceOf",
-          args: [address],
-        }),
-        userInfo(pid, address),
-        pendingReward(pid, address),
-      ]);
+      const [bal, user, reward, pool] =
+        await Promise.all([
+          publicClient.readContract({
+            address: token,
+            abi: ERC20_ABI,
+            functionName: "balanceOf",
+            args: [address],
+          }),
+          userInfo(pid, address),
+          pendingReward(pid, address),
+          poolInfo(pid),
+        ]);
 
-    setBalance(bal);
-    setStaked(user.amount);
-    setPending(reward);
+      // total staked = staking contract token balance
+      const total = await publicClient.readContract({
+        address: token,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: [CONTRACTS.staking],
+      });
 
-    setLoading(false);
-  }
+      setBalance(bal);
+      setStaked(user.amount);
+      setPending(reward);
+      setRewardPerBlock(pool.rewardPerBlock);
+      setTotalStaked(total);
+    } finally {
+      setLoading(false);
+    }
+  }, [address, pid, token]);
 
   useEffect(() => {
     load();
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
-  }, [address]);
+  }, [load]);
+
+  // --------------------------------
+  // APR Calculation
+  // --------------------------------
+  let apr = 0;
+
+  if (totalStaked > 0n && rewardPerBlock > 0n) {
+    const yearlyRewards =
+      rewardPerBlock * BLOCKS_PER_YEAR;
+
+    const yearly = Number(
+      formatUnits(yearlyRewards, 18)
+    );
+
+    const tvl = Number(
+      formatUnits(totalStaked, decimals)
+    );
+
+    if (tvl > 0) {
+      apr = (yearly / tvl) * 100;
+    }
+  }
+
+  const disabled =
+    !connected || loading;
 
   return (
-    <Card className="p-6 space-y-5 w-full max-w-md mx-auto">
+    <Card className="p-6 space-y-6 w-full max-w-md mx-auto">
       <h3 className="font-semibold">
         Stake {tokenSymbol}
       </h3>
 
       {loading && <Spinner />}
 
+      {/* Pool Stats */}
+      <div className="text-sm space-y-1">
+        <div>
+          TVL: {formatUnits(totalStaked, decimals)}
+        </div>
+        <div>
+          Reward / Block:{" "}
+          {formatUnits(rewardPerBlock, 18)}
+        </div>
+        <div>
+          APR: {apr.toFixed(2)}%
+        </div>
+      </div>
+
+      {/* User Stats */}
       <div className="text-sm space-y-1">
         <div>
           Balance: {formatUnits(balance, decimals)}
@@ -89,27 +153,33 @@ export default function StakingCard({
         </div>
       </div>
 
+      {/* Amount Input */}
       <div className="flex gap-2">
         <input
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) =>
+            setInput(e.target.value)
+          }
           className="flex-1 px-3 py-2 border rounded-lg"
           placeholder="0.0"
         />
         <button
           onClick={() =>
-            setInput(formatUnits(balance, decimals))
+            setInput(
+              formatUnits(balance, decimals)
+            )
           }
-          className="px-3 py-2 bg-gray-200 rounded-lg text-sm"
+          className="px-3 py-2 bg-gray-200 dark:bg-gray-800 rounded-lg text-sm"
         >
           MAX
         </button>
       </div>
 
+      {/* Actions */}
       <div className="flex gap-2">
         <Button
           fullWidth
-          disabled={!connected}
+          disabled={disabled}
           onClick={() => handleStake(input)}
         >
           Stake
@@ -118,7 +188,7 @@ export default function StakingCard({
         <Button
           fullWidth
           variant="secondary"
-          disabled={!connected}
+          disabled={disabled}
           onClick={() => handleWithdraw(input)}
         >
           Withdraw
