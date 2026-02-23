@@ -1,22 +1,170 @@
+
 [
-  {
-    "inputs": [
-      { "internalType": "address", "name": "_token", "type": "address" },
-      { "internalType": "uint256", "name": "_softCap", "type": "uint256" },
-      { "internalType": "uint256", "name": "_hardCap", "type": "uint256" },
-      { "internalType": "uint256", "name": "_startTime", "type": "uint256" },
-      { "internalType": "uint256", "name": "_endTime", "type": "uint256" }
-    ],
-    "name": "createPresale",
-    "outputs": [{ "internalType": "address", "name": "presale", "type": "address" }],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "getPresales",
-    "outputs": [{ "internalType": "address[]", "name": "", "type": "address[]" }],
-    "stateMutability": "view",
-    "type": "function"
-  }
+	{
+		"inputs": [
+			{
+				"internalType": "address payable",
+				"name": "_feeCollector",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "_locker",
+				"type": "address"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"inputs": [
+			{
+				"components": [
+					{
+						"internalType": "address",
+						"name": "token",
+						"type": "address"
+					},
+					{
+						"internalType": "address",
+						"name": "paymentToken",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "tokenPrice",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "softCap",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "hardCap",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "startTime",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "endTime",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "liquidityPercent",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "vestingPercent",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "liquidityLockDuration",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "vestingDuration",
+						"type": "uint256"
+					}
+				],
+				"internalType": "struct FSKPresale.PresaleConfig",
+				"name": "_config",
+				"type": "tuple"
+			},
+			{
+				"internalType": "address",
+				"name": "_router",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "_dexFactory",
+				"type": "address"
+			}
+		],
+		"name": "createPresale",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "feeCollector",
+		"outputs": [
+			{
+				"internalType": "contract FSKFeeCollector",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "getPresales",
+		"outputs": [
+			{
+				"internalType": "contract FSKPresale[]",
+				"name": "",
+				"type": "address[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "locker",
+		"outputs": [
+			{
+				"internalType": "contract FSKMegaLocker",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "owner",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "presales",
+		"outputs": [
+			{
+				"internalType": "contract FSKPresale",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
 ]
